@@ -1,0 +1,282 @@
+{
+  "info": {
+    "name": "LSK Estoque",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "API do Sistema de Gestão de Estoque. Variáveis: baseUrl (API) e rabbitUrl (management do RabbitMQ)."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "rabbitUrl",
+      "value": "http://localhost:15672"
+    },
+    {
+      "key": "sku",
+      "value": "TONER-HP-85A"
+    }
+  ],
+  "item": [
+    {
+      "name": "Estoque",
+      "item": [
+        {
+          "name": "Consultar estoque por SKU",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/estoque/{{sku}}"
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Listar produtos por classe ABC",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/produtos?classe=A"
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Entrada de NF-e (chave nova a cada envio)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/estoque/entradas/nfe"
+            },
+            "description": "Gera uma chave de acesso de 44 dígitos nova a cada envio. Reenviar a mesma chave retorna conflito (idempotência).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chaveAcesso\": \"{{chaveAcesso}}\",\n  \"numero\": \"1234\",\n  \"itens\": [\n    {\n      \"sku\": \"TONER-HP-85A\",\n      \"codigoLote\": \"L-2026-C\",\n      \"quantidade\": 10,\n      \"custoUnitario\": 45.5,\n      \"dataValidade\": \"2027-12-31\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let chave = '35';",
+                  "while (chave.length < 44) { chave += Math.floor(Math.random() * 10); }",
+                  "pm.variables.set('chaveAcesso', chave);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Recalcular Curva ABC",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/estoque/curva-abc/recalcular"
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "RabbitMQ",
+      "item": [
+        {
+          "name": "Publicar venda confirmada (1 un. TONER-HP-85A)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{rabbitUrl}}/api/exchanges/%2F/lsk.estoque/publish"
+            },
+            "description": "eventId novo a cada envio. Resposta esperada: {\"routed\": true}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{bodyPublish}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "guest"
+                },
+                {
+                  "key": "password",
+                  "value": "guest"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const id = pm.variables.replaceIn('{{$guid}}');",
+                  "const evento = { eventId: id, pedido: 'PED-' + id, ocorridoEm: new Date().toISOString(),",
+                  "  itens: [{ sku: 'TONER-HP-85A', quantidade: 1, precoUnitario: 89.9 }] };",
+                  "pm.variables.set('bodyPublish', JSON.stringify({",
+                  "  properties: { content_type: 'application/json' }, routing_key: 'venda.confirmada',",
+                  "  payload: JSON.stringify(evento), payload_encoding: 'string' }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Publicar venda com saldo insuficiente (vai para a DLQ)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{rabbitUrl}}/api/exchanges/%2F/lsk.estoque/publish"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{{bodyPublish}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "guest"
+                },
+                {
+                  "key": "password",
+                  "value": "guest"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const id = pm.variables.replaceIn('{{$guid}}');",
+                  "const evento = { eventId: id, pedido: 'PED-' + id, ocorridoEm: new Date().toISOString(),",
+                  "  itens: [{ sku: 'TONER-HP-85A', quantidade: 999999, precoUnitario: 89.9 }] };",
+                  "pm.variables.set('bodyPublish', JSON.stringify({",
+                  "  properties: { content_type: 'application/json' }, routing_key: 'venda.confirmada',",
+                  "  payload: JSON.stringify(evento), payload_encoding: 'string' }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Publicar venda com SKU inexistente (vai para a DLQ)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{rabbitUrl}}/api/exchanges/%2F/lsk.estoque/publish"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{{bodyPublish}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "guest"
+                },
+                {
+                  "key": "password",
+                  "value": "guest"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const id = pm.variables.replaceIn('{{$guid}}');",
+                  "const evento = { eventId: id, pedido: 'PED-' + id, ocorridoEm: new Date().toISOString(),",
+                  "  itens: [{ sku: 'NAO-EXISTE', quantidade: 1, precoUnitario: 10 }] };",
+                  "pm.variables.set('bodyPublish', JSON.stringify({",
+                  "  properties: { content_type: 'application/json' }, routing_key: 'venda.confirmada',",
+                  "  payload: JSON.stringify(evento), payload_encoding: 'string' }));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Saúde",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health"
+            },
+            "description": ""
+          }
+        }
+      ]
+    }
+  ]
+}
