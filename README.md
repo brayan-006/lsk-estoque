@@ -1,24 +1,129 @@
-# LSK Estoque — Backend (Java 17 / Spring Boot 3.5)
+<h1 align="center">LSK Estoque</h1>
 
-Gestão de estoque com baixa **FEFO (fallback PEPS)**, **Curva ABC**, **estoque mínimo**, mensageria **RabbitMQ**
-e integração com **SAP Business One (Service Layer)**.
+<p align="center">
+  Inventory management backend with FEFO picking, ABC analysis, minimum-stock alerts<br>
+  and an event-driven integration with SAP Business One.
+</p>
 
-## Subindo o ambiente
+<p align="center">
+  <img alt="Java 17" src="https://img.shields.io/badge/Java-17-orange">
+  <img alt="Spring Boot 3.5" src="https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F">
+  <img alt="PostgreSQL 16" src="https://img.shields.io/badge/PostgreSQL-16-336791">
+  <img alt="RabbitMQ 3.13" src="https://img.shields.io/badge/RabbitMQ-3.13-FF6600">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-18%20passing-brightgreen">
+</p>
 
-```bash
-docker compose up -d                       # PostgreSQL 16 + RabbitMQ (painel em :15672, guest/guest)
-mvn spring-boot:run                        # Flyway cria o schema e a função pr_dar_baixa_fefo
-psql -h localhost -U lsk -d lsk_estoque -f src/main/resources/db/dev/dev-seed.sql   # dados de exemplo (senha: lsk)
-mvn test                                   # teste de integração da baixa FEFO (Testcontainers, requer Docker)
+---
+
+## Table of contents
+
+- [Why this project](#why-this-project)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Tech stack](#tech-stack)
+- [Quick start](#quick-start)
+- [API](#api)
+- [Sales flow (event-driven)](#sales-flow-event-driven)
+- [SAP Business One integration](#sap-business-one-integration)
+- [Design decisions](#design-decisions)
+- [Tests](#tests)
+- [Project structure](#project-structure)
+- [Status and limitations](#status-and-limitations)
+- [Roadmap](#roadmap)
+- [How this was built](#how-this-was-built)
+- [Author](#author)
+- [Disclaimer](#disclaimer)
+
+## Why this project
+
+Inventory systems look simple until you meet the real constraints: perishable goods must leave in expiry order,
+sales events arrive from a broker and may be delivered more than once, the ERP can be down for hours, and two
+orders can compete for the last unit at the same time.
+
+LSK Estoque is my attempt at solving those problems properly, in a stack that mirrors what an SAP-centric company
+uses: a service that owns the physical stock, receives sales as messages, and keeps SAP Business One in sync
+**without ever blocking or rolling back a stock movement because the ERP is unavailable**.
+
+## Features
+
+- **FEFO picking** (First-Expired, First-Out) with FIFO fallback for items without an expiry date. Expired and blocked batches are never picked.
+- **Idempotent sales processing**: the same `eventId` never deducts stock twice, even under redelivery.
+- **Goods receipt from NF-e** (Brazilian electronic invoice) through JSON, idempotent by access key, with weighted average cost.
+- **ABC analysis** by revenue over a 90-day window (A up to 80 %, B up to 95 %, C otherwise), recalculated nightly or on demand.
+- **Minimum-stock alerts** that open when the balance reaches the threshold and close automatically when it recovers.
+- **SAP B1 sync through an outbox**: asynchronous delivery after commit and automatic retries (up to 5 attempts).
+- **Dead-letter queue** for business errors (unknown SKU, insufficient stock) and malformed payloads.
+- **Swagger UI**, health checks and a one-command Docker setup.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    S[Sales system] -- venda.confirmada --> MQ[(RabbitMQ<br/>lsk.estoque)]
+    MQ --> L[Listener]
+    MQ -. business error .-> DLQ[(Dead-letter queue)]
+    L --> P[ProcessarVendaService]
+    P -- idempotency + FEFO<br/>one transaction --> DB[(PostgreSQL<br/>pr_dar_baixa_fefo)]
+    API[REST API<br/>NF-e, stock, ABC] --> DB
+    DB -- outbox: movimentacoes.sap_status --> SY[SAP sync<br/>after commit + retry job]
+    SY --> SAP[SAP B1<br/>Service Layer]
+    JOBS[Scheduled jobs<br/>ABC, minimum stock, expiry] --> DB
 ```
 
-## Endpoints
+The code follows a layered, ports-and-adapters style: the domain does not know about Spring Web, RabbitMQ or SAP.
+
+## Tech stack
+
+| Area | Technology |
+|---|---|
+| Language / framework | Java 17, Spring Boot 3.5 (Web, Data JPA, Validation, AMQP, Actuator) |
+| Database | PostgreSQL 16, Flyway migrations, PL/pgSQL function for the picking rule |
+| Messaging | RabbitMQ 3.13 (retry with backoff, dead-letter queue) |
+| ERP | SAP Business One Service Layer (REST) |
+| Tests | JUnit 5, AssertJ, Testcontainers |
+| Delivery | Docker multi-stage build, Docker Compose with health checks |
+| Docs | springdoc-openapi (Swagger UI), Postman/Insomnia collection |
+
+## Quick start
+
+Requires Docker Desktop. The whole stack (application, PostgreSQL and RabbitMQ) starts with one command:
 
 ```bash
-# Posição em tempo real (saldo + lotes na ordem em que serão consumidos)
+docker compose up -d --build
+docker compose ps                        # wait until the three services are "healthy"
+curl http://localhost:8080/actuator/health
+```
+
+Load the sample data (`TONER-HP-85A` with two batches, `CABO-UTP-CAT6`):
+
+```bash
+docker compose exec -T postgres psql -U lsk -d lsk_estoque < src/main/resources/db/dev/dev-seed.sql
+```
+
+| Service | URL |
+|---|---|
+| API | http://localhost:8080 |
+| Swagger UI | http://localhost:8080/swagger-ui.html |
+| RabbitMQ management | http://localhost:15672 (guest / guest) |
+| PostgreSQL | localhost:5432 (lsk / lsk, database `lsk_estoque`) |
+
+Reset everything with `docker compose down -v`.
+
+To run the application outside Docker (for debugging):
+
+```bash
+docker compose up -d postgres rabbitmq
+mvn spring-boot:run
+```
+
+## API
+
+```bash
+# Real-time position: balance and batches in the order they will be picked
 curl http://localhost:8080/api/v1/estoque/TONER-HP-85A
 
-# Entrada de NF-e (idempotente pela chave de acesso; reenvio => 409)
+# Goods receipt from NF-e (idempotent by access key; resubmission returns 409)
 curl -X POST http://localhost:8080/api/v1/estoque/entradas/nfe -H 'Content-Type: application/json' -d '{
   "chaveAcesso": "35260112345678000190550010000012341000012345",
   "numero": "1234",
@@ -26,17 +131,34 @@ curl -X POST http://localhost:8080/api/v1/estoque/entradas/nfe -H 'Content-Type:
               "custoUnitario": 119.50, "dataFabricacao": "2026-09-01", "dataValidade": "2027-09-01" }]
 }'
 
-# Produtos por classe da Curva ABC
+# Products by ABC class
 curl 'http://localhost:8080/api/v1/produtos?classe=A'
 
-# Recalcular a Curva ABC sob demanda (o job noturno já faz)
+# Recalculate the ABC analysis on demand (a nightly job also does it)
 curl -X POST http://localhost:8080/api/v1/estoque/curva-abc/recalcular
 ```
 
-## Publicando um evento de venda
+Example response of the stock query. Note `ordemDeSaida`: the batch with the earliest expiry leaves first.
 
-No painel do RabbitMQ (Exchanges → `lsk.estoque` → Publish message), routing key `venda.confirmada`,
-header `content_type = application/json`:
+```json
+{
+  "sku": "TONER-HP-85A",
+  "classeAbc": "A",
+  "saldoDisponivel": 24.000,
+  "estoqueMinimo": 5.000,
+  "abaixoDoMinimo": false,
+  "lotesEmOrdemDeSaida": [
+    { "codigoLote": "L-2026-C", "dataValidade": "2027-09-01", "quantidade": 4.000,  "criterio": "FEFO", "ordemDeSaida": 1 },
+    { "codigoLote": "L-2026-D", "dataValidade": "2027-09-01", "quantidade": 20.000, "criterio": "FEFO", "ordemDeSaida": 2 }
+  ]
+}
+```
+
+A ready-to-import Postman/Insomnia collection is in [`docs/LSK-Estoque.postman_collection.json`](docs/LSK-Estoque.postman_collection.json).
+
+## Sales flow (event-driven)
+
+Sales arrive through RabbitMQ: exchange `lsk.estoque`, routing key `venda.confirmada`, `content_type = application/json`.
 
 ```json
 {
@@ -47,40 +169,139 @@ header `content_type = application/json`:
 }
 ```
 
-Publicar duas vezes o mesmo `eventId` baixa o estoque **uma vez só**. Erros de negócio (SKU inexistente, saldo
-insuficiente) e payload inválido vão para `lsk.estoque.vendas.dlq`.
+You can publish it from the RabbitMQ management UI (Exchanges, `lsk.estoque`, Publish message).
 
-## Integração SAP B1
+What happens next, in a single database transaction: the `eventId` is registered in `eventos_processados`
+(a duplicate stops here), each SKU is deducted by the FEFO function, movements are recorded in the outbox and minimum-stock
+rules are evaluated. Only after the commit does the SAP synchronization start.
 
-Desligada por padrão (`lsk.sap.enabled=false`; as movimentações ficam `PENDENTE`). Para ligar:
+- Publishing the same `eventId` twice deducts the stock **once**.
+- Unknown SKU or insufficient stock: the message goes to `lsk.estoque.vendas.dlq` and the balance does not change.
+
+## SAP Business One integration
+
+Disabled by default (`lsk.sap.enabled=false`); movements simply wait as `PENDENTE` in the outbox. To enable it against a Service Layer:
 
 ```bash
-SAP_ENABLED=true SAP_URL=https://servidor:50000 SAP_COMPANY_DB=SBO_LSK SAP_USER=... SAP_PASSWORD=... \
+SAP_ENABLED=true SAP_URL=https://server:50000 SAP_COMPANY_DB=SBO_LSK SAP_USER=... SAP_PASSWORD=... \
 SAP_WAREHOUSE=01 mvn spring-boot:run
 ```
 
-- `GoodsIssue` → `POST /b1s/v1/InventoryGenExits`; `GoodsReceipt` → `POST /b1s/v1/InventoryGenEntries`.
-- Os lotes são enviados em `BatchNumbers` (desligue com `lsk.sap.send-batches=false` se o item não tem gestão por lote).
-- `ItemCode` = `produtos.sap_item_code` (ou o SKU, se nulo).
-- Idempotência no SAP: o documento leva `Reference2 = VENDA-<eventId>` / `NFE-<chave>` e, antes de criar, consulta se já existe.
-- Certificado autoassinado em DEV: `SAP_INSECURE_SSL=true` (ou importe o certificado no truststore da JVM).
+- Goods issue is posted to `InventoryGenExits` and goods receipt to `InventoryGenEntries`.
+- Batches are sent in `BatchNumbers` (`lsk.sap.send-batches=false` for items without batch management).
+- `ItemCode` comes from `produtos.sap_item_code`, falling back to the SKU.
+- SAP-side idempotency: each document carries `Reference2 = VENDA-<eventId>` / `NFE-<accessKey>`, and the service checks for it before creating.
+- Self-signed certificates in DEV: `SAP_INSECURE_SSL=true` (or import the certificate into the JVM truststore).
 
-## Decisões de projeto
+### Developing without an SAP system
 
-| Tema | Decisão |
+I do not have access to a real Business One instance, so the repository includes `mock-sap.js`, a small Node.js
+mock of the Service Layer (login, goods issue and goods receipt) on port 50000.
+
+```bash
+node mock-sap.js                  # normal mode
+MOCK_FAIL=1 node mock-sap.js      # every document request fails with HTTP 500
+```
+
+```powershell
+# application on the host
+$env:SAP_ENABLED="true"; $env:SAP_URL="http://localhost:50000"; $env:SAP_COMPANY_DB="MOCK"
+$env:SAP_USER="mock"; $env:SAP_PASSWORD="mock"; mvn spring-boot:run
+
+# application in Docker (reaches the host through host.docker.internal)
+$env:APP_SAP_ENABLED="true"; docker compose up -d
+```
+
+Inspect the outbox:
+
+```bash
+docker compose exec -T postgres psql -U lsk -d lsk_estoque -c \
+  "select tipo, referencia, sap_status, sap_tentativas, sap_doc_entry, sap_erro from movimentacoes order by id"
+```
+
+**Failure and recovery scenario I validated:** with `MOCK_FAIL=1` the rows become `ERRO` and `sap_tentativas` grows every minute;
+after restarting the mock without the flag, the retry job moves them to `ENVIADO` with the document number filled in.
+
+## Design decisions
+
+| Topic | Decision and reasoning |
 |---|---|
-| FEFO | Fonte única da regra: função PL/pgSQL `pr_dar_baixa_fefo` (trava produto e lotes, baixa e grava movimentações atomicamente). Ordem: lotes com validade (vence primeiro sai primeiro; empate por entrada) → lotes sem validade por entrada (PEPS). Vencidos/bloqueados nunca saem. |
-| Idempotência | Tabela `eventos_processados` com `INSERT ... ON CONFLICT DO NOTHING` na **mesma transação** da baixa. |
-| SAP | Outbox na própria `movimentacoes` (`sap_status`): grava → commit → envia assíncrono → job reenvia `PENDENTE/ERRO` (até 5 tentativas). Uma falha do SAP nunca desfaz a baixa. |
-| Concorrência | `FOR UPDATE` no produto e nos lotes; SKUs processados em ordem alfabética para evitar deadlock. |
-| Curva ABC | Faturamento (preço × qtd das saídas `VENDA`) na janela de 90 dias, giro como desempate. A ≤ 80 %, B ≤ 95 %, C restante e sem vendas. Job às 02:30. |
-| Estoque mínimo | Avaliado a cada entrada/baixa e por varredura a cada 15 min. Um alerta aberto por produto; vira `resolvido` quando o saldo se recupera. Também publicado em `lsk.estoque.alertas.q`. |
+| FEFO | The rule lives in one place, the PL/pgSQL function `pr_dar_baixa_fefo`, which locks product and batches, deducts and records movements atomically. Order: batches with expiry (earliest first, ties by receipt date), then batches without expiry (FIFO). It is a *function*, not a *procedure*, because the application needs the picked batches back as a result set. |
+| Idempotency | `INSERT ... ON CONFLICT DO NOTHING` into `eventos_processados` inside the **same transaction** as the deduction, so a crash can never leave "processed but not deducted" (or the reverse). |
+| SAP outbox | The movement and its `sap_status` are written together; delivery happens after commit and a job retries `PENDENTE`/`ERRO` rows. The ERP being down never undoes a physical stock movement. |
+| Concurrency | `FOR UPDATE` on product and batches; SKUs of an order are processed in alphabetical order to avoid deadlocks between concurrent orders. |
+| ABC analysis | Revenue (price times quantity of `VENDA` outbound movements) over 90 days, turnover as tiebreaker. A product is class A while the cumulative share *before* it is under 80 %. Items without sales drop to C. |
+| Minimum stock | Evaluated on every receipt and deduction and by a sweep every 15 minutes. One open alert per product, resolved automatically on recovery; also published to `lsk.estoque.alertas.q`. |
+| Schema | Owned by Flyway; Hibernate runs with `ddl-auto=validate`, so any drift between entities and schema fails at startup instead of in production. |
+| SAP documents | Goods issue and receipt map to `InventoryGenExits` and `InventoryGenEntries` in the Service Layer. |
 
-## Estrutura
+## Tests
+
+```bash
+mvn test        # 18 integration tests on a real PostgreSQL via Testcontainers (requires Docker)
+```
+
+| Test class | Covers |
+|---|---|
+| `BaixaFefoIntegrationTest` | FEFO order, FIFO fallback, expired and blocked batches, insufficient stock |
+| `EntradaNfeIntegrationTest` | Batch creation, idempotency by access key, weighted average cost, validations |
+| `VendaIntegrationTest` | Event idempotency, business errors, minimum-stock alert lifecycle |
+| `CurvaAbcIntegrationTest` | A/B/C classification and downgrade of items without sales |
+
+The tests run against a real database on purpose: the picking rule is SQL, so mocking the repository would test nothing.
+
+## Project structure
 
 ```
-domain/        entidades JPA, enums, exceções e portas de repositório
-application/   serviços de caso de uso, DTOs, eventos, porta ErpGateway
-infrastructure/ adaptadores: JDBC (procedure), SAP B1, RabbitMQ, jobs
-web/           StockController + tratamento de erros (RFC 9457)
+domain/          JPA entities, enums, exceptions and repository ports
+application/     use-case services, DTOs, events, ErpGateway port
+infrastructure/  adapters: JDBC (PL/pgSQL function), SAP B1, RabbitMQ, scheduled jobs
+web/             REST controller and error handling (RFC 9457 problem details)
 ```
+
+```
+docs/            Postman/Insomnia collection
+mock-sap.js      SAP Service Layer mock for local development
+Dockerfile       multi-stage build (Maven, then a slim JRE image)
+docker-compose.yml   application + PostgreSQL + RabbitMQ with health checks
+```
+
+## Status and limitations
+
+- The SAP integration was validated end to end **against the mock**, including failure and retry, but not against a real Business One system. Field names and behavior follow the Service Layer documentation; a real environment may need adjustments (UoM, warehouses, user-defined fields).
+- Authentication and authorization are not implemented; the API is meant to run behind a gateway or on a private network.
+- Credentials in `docker-compose.yml` are development defaults.
+
+## Roadmap
+
+- [ ] Web dashboard (React): stock by batch, alerts, ABC chart and SAP sync status
+- [ ] Translate remaining Portuguese identifiers, comments and messages to English
+- [ ] Authentication (OAuth2/JWT) and role-based access
+- [ ] CI pipeline (build and tests on every push)
+- [ ] Metrics and tracing (Micrometer, OpenTelemetry)
+
+## How this was built
+
+I built this project with an AI assistant (Claude) as a pair-programming partner. It helped me draft code, reason about
+PostgreSQL locking and the PL/pgSQL function, and debug environment problems. I treated its output as a starting point:
+I set up the environment (Docker, WSL2, Maven), ran every scenario myself, hit and fixed real issues
+(a `char(1)` versus `varchar` mapping bug, Docker DNS problems during the image build, a transaction left in an aborted
+state inside a test), and decided the behaviors listed in [Design decisions](#design-decisions).
+Everything described in this README was executed and checked on my machine.
+
+## Author
+
+**Brayan**, backend developer focused on integrations and ERP-adjacent systems.
+
+- GitHub: [@brayan-006](https://github.com/brayan-006)
+- Company site: [LSK Technologies](https://brayan-006.github.io/lsk-technologies/)
+
+## Disclaimer
+
+This is an independent personal project. It is not affiliated with, sponsored by or endorsed by SAP SE.
+SAP and SAP Business One are trademarks or registered trademarks of SAP SE; they are mentioned here only to describe
+interoperability with the product's public REST API (Service Layer).
+
+This repository contains no SAP software, binaries, proprietary code or confidential documentation, and it does not
+connect to any SAP system by default. `mock-sap.js` is my own independent implementation of the few endpoints the
+integration uses, written for local development and tests only.
