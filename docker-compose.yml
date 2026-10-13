@@ -43,7 +43,7 @@ services:
       DB_USER: lsk
       DB_PASSWORD: lsk
       RABBIT_HOST: rabbitmq
-      # SAP desligado por padrão. Para usar o mock (node mock-sap.js no host):
+      # SAP is off by default. To use the mock (node mock-sap.js on the host):
       #   $env:APP_SAP_ENABLED="true"; docker compose up -d
       SAP_ENABLED: ${APP_SAP_ENABLED:-false}
       SAP_URL: ${APP_SAP_URL:-http://host.docker.internal:50000}
@@ -58,6 +58,17 @@ services:
       timeout: 5s
       retries: 10
       start_period: 40s
+
+  dashboard:
+    build:
+      context: ./dashboard
+      args:
+        VITE_API_URL: http://localhost:8080
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "5173:80"
 
 volumes:
   pgdata:
