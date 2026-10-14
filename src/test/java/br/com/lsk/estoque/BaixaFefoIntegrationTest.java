@@ -28,7 +28,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Valida a pr_dar_baixa_fefo de ponta a ponta contra um PostgreSQL real (requer Docker). */
+/** Exercises pr_dar_baixa_fefo end to end against a real PostgreSQL (requires Docker). */
 @SpringBootTest(properties = {
         "lsk.jobs.enabled=false",
         "spring.rabbitmq.listener.simple.auto-startup=false"
@@ -48,10 +48,10 @@ class BaixaFefoIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test
-    void consomeOLoteQueVenceAntesIndependenteDaOrdemDeEntrada() {
-        Produto p = produto("FEFO-1", true);
-        lote(p, "A", hoje(30), dias(-3), "10");
-        lote(p, "B", hoje(10), dias(-2), "5");
+    void picksTheEarliestExpiryFirstRegardlessOfReceiptOrder() {
+        Produto p = product("FEFO-1", true);
+        batch(p, "A", expiresIn(30), receivedDaysAgo(3), "10");
+        batch(p, "B", expiresIn(10), receivedDaysAgo(2), "5");
 
         List<LoteBaixado> r = baixa.darBaixa(p, new BigDecimal("12"), "REF-1", "VENDA", new BigDecimal("10"), "PED-1");
 
@@ -59,88 +59,86 @@ class BaixaFefoIntegrationTest {
         assertThat(r.get(0).quantidade()).isEqualByComparingTo("5");
         assertThat(r.get(1).quantidade()).isEqualByComparingTo("7");
         assertThat(r).allMatch(l -> l.criterio() == CriterioBaixa.FEFO);
-        assertThat(saldoDoLote(p, "B")).isEqualByComparingTo("0");
-        assertThat(statusDoLote(p, "B")).isEqualTo("ESGOTADO");
-        assertThat(saldoDoLote(p, "A")).isEqualByComparingTo("3");
-        assertThat(movimentacoes("REF-1")).isEqualTo(2);
+        assertThat(batchBalance(p, "B")).isEqualByComparingTo("0");
+        assertThat(batchStatus(p, "B")).isEqualTo("ESGOTADO");
+        assertThat(batchBalance(p, "A")).isEqualByComparingTo("3");
+        assertThat(movementCount("REF-1")).isEqualTo(2);
     }
 
     @Test
-    void usaPepsQuandoOsLotesNaoTemValidade() {
-        Produto p = produto("PEPS-1", false);
-        lote(p, "X", null, dias(-10), "4");
-        lote(p, "Y", null, dias(-5), "4");
+    void fallsBackToFifoWhenBatchesHaveNoExpiry() {
+        Produto p = product("PEPS-1", false);
+        batch(p, "X", null, receivedDaysAgo(10), "4");
+        batch(p, "Y", null, receivedDaysAgo(5), "4");
 
         List<LoteBaixado> r = baixa.darBaixa(p, new BigDecimal("6"), "REF-2", "VENDA", null, null);
 
         assertThat(r).extracting(LoteBaixado::codigoLote).containsExactly("X", "Y");
         assertThat(r).allMatch(l -> l.criterio() == CriterioBaixa.PEPS);
-        assertThat(saldoDoLote(p, "Y")).isEqualByComparingTo("2");
+        assertThat(batchBalance(p, "Y")).isEqualByComparingTo("2");
     }
 
     @Test
-    void lotesComValidadeSaemAntesDosSemValidade() {
-        Produto p = produto("MIX-1", false);
-        lote(p, "SEM-VAL", null, dias(-30), "10");
-        lote(p, "COM-VAL", hoje(20), dias(-1), "10");
+    void batchesWithExpiryLeaveBeforeBatchesWithout() {
+        Produto p = product("MIX-1", false);
+        batch(p, "NO-EXPIRY", null, receivedDaysAgo(30), "10");
+        batch(p, "WITH-EXPIRY", expiresIn(20), receivedDaysAgo(1), "10");
 
         List<LoteBaixado> r = baixa.darBaixa(p, new BigDecimal("12"), "REF-3", "VENDA", null, null);
 
-        assertThat(r).extracting(LoteBaixado::codigoLote).containsExactly("COM-VAL", "SEM-VAL");
+        assertThat(r).extracting(LoteBaixado::codigoLote).containsExactly("WITH-EXPIRY", "NO-EXPIRY");
         assertThat(r.get(0).criterio()).isEqualTo(CriterioBaixa.FEFO);
         assertThat(r.get(1).criterio()).isEqualTo(CriterioBaixa.PEPS);
     }
 
     @Test
-    void loteVencidoNuncaEConsumido() {
-        Produto p = produto("VENC-1", true);
-        lote(p, "VENCIDO", hoje(-1), dias(-60), "100");
-        lote(p, "OK", hoje(5), dias(-1), "3");
+    void expiredBatchIsNeverPicked() {
+        Produto p = product("VENC-1", true);
+        batch(p, "EXPIRED", expiresIn(-1), receivedDaysAgo(60), "100");
+        batch(p, "OK", expiresIn(5), receivedDaysAgo(1), "3");
 
         assertThatThrownBy(() -> baixa.darBaixa(p, new BigDecimal("5"), "REF-4", "VENDA", null, null))
                 .isInstanceOf(EstoqueInsuficienteException.class);
     }
 
-    // ------------------------------------------------------------------ helpers
-
-    private Produto produto(String sku, boolean controlaValidade) {
+    private Produto product(String sku, boolean controlsExpiry) {
         Categoria c = categorias.save(new Categoria("Cat-" + sku, null));
         Produto p = new Produto();
         p.setSku(sku);
-        p.setDescricao("Produto " + sku);
+        p.setDescricao("Product " + sku);
         p.setCategoria(c);
-        p.setControlaValidade(controlaValidade);
+        p.setControlaValidade(controlsExpiry);
         p.setCustoMedio(new BigDecimal("5"));
         p.setPrecoVenda(new BigDecimal("10"));
         return produtos.saveAndFlush(p);
     }
 
-    private void lote(Produto p, String codigo, LocalDate validade, OffsetDateTime entrada, String qtd) {
+    private void batch(Produto p, String code, LocalDate expiry, OffsetDateTime received, String qty) {
         lotes.saveAndFlush(Lote.builder()
-                .produto(p).codigoLote(codigo).dataValidade(validade).dataEntrada(entrada)
-                .quantidadeInicial(new BigDecimal(qtd)).quantidadeAtual(new BigDecimal(qtd))
+                .produto(p).codigoLote(code).dataValidade(expiry).dataEntrada(received)
+                .quantidadeInicial(new BigDecimal(qty)).quantidadeAtual(new BigDecimal(qty))
                 .custoUnitario(new BigDecimal("5")).build());
     }
 
-    private static LocalDate hoje(int plusDias) {
-        return LocalDate.now().plusDays(plusDias);
+    private static LocalDate expiresIn(int days) {
+        return LocalDate.now().plusDays(days);
     }
 
-    private static OffsetDateTime dias(int plusDias) {
-        return OffsetDateTime.now().plusDays(plusDias);
+    private static OffsetDateTime receivedDaysAgo(int days) {
+        return OffsetDateTime.now().minusDays(days);
     }
 
-    private BigDecimal saldoDoLote(Produto p, String codigo) {
+    private BigDecimal batchBalance(Produto p, String code) {
         return jdbc.queryForObject("SELECT quantidade_atual FROM lotes WHERE produto_id = ? AND codigo_lote = ?",
-                BigDecimal.class, p.getId(), codigo);
+                BigDecimal.class, p.getId(), code);
     }
 
-    private String statusDoLote(Produto p, String codigo) {
+    private String batchStatus(Produto p, String code) {
         return jdbc.queryForObject("SELECT status FROM lotes WHERE produto_id = ? AND codigo_lote = ?",
-                String.class, p.getId(), codigo);
+                String.class, p.getId(), code);
     }
 
-    private Integer movimentacoes(String referencia) {
-        return jdbc.queryForObject("SELECT count(*) FROM movimentacoes WHERE referencia = ?", Integer.class, referencia);
+    private Integer movementCount(String reference) {
+        return jdbc.queryForObject("SELECT count(*) FROM movimentacoes WHERE referencia = ?", Integer.class, reference);
     }
 }

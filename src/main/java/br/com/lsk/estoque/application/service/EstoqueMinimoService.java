@@ -26,7 +26,7 @@ public class EstoqueMinimoService {
     private final ProdutoRepository produtos;
     private final ApplicationEventPublisher eventos;
 
-    /** Avalia um produto: abre alerta se saldo <= mínimo (um por vez) e fecha o alerta se o saldo se recuperou. */
+    /** Opens one alert when the balance is at or below the minimum and closes it when the balance recovers. */
     @Transactional
     public void avaliar(Produto produto) {
         BigDecimal minimo = produto.getEstoqueMinimo();
@@ -39,7 +39,7 @@ public class EstoqueMinimoService {
             if (alertas.existsByProdutoIdAndTipoAndResolvidoFalse(produto.getId(), TipoAlerta.ESTOQUE_MINIMO)) {
                 return;
             }
-            String mensagem = "Estoque mínimo atingido: SKU %s com saldo %s (mínimo %s)".formatted(
+            String mensagem = "Minimum stock reached: SKU %s has balance %s (minimum %s)".formatted(
                     produto.getSku(), saldo.stripTrailingZeros().toPlainString(),
                     minimo.stripTrailingZeros().toPlainString());
             AlertaEstoque alerta = alertas.save(AlertaEstoque.builder()
@@ -57,7 +57,7 @@ public class EstoqueMinimoService {
         }
     }
 
-    /** Varredura periódica (job): garante alerta mesmo para saldo que caiu por vencimento de lote. */
+    /** Periodic sweep: catches balances that dropped because a batch expired. */
     public int avaliarTodos() {
         var abaixo = produtos.findAbaixoDoMinimo();
         abaixo.forEach(this::avaliar);

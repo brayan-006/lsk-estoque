@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
-/** Publica o alerta de estoque mínimo no broker somente depois do commit (o alerta também fica gravado no banco). */
+/** Publishes the minimum-stock alert to the broker after the commit. */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -24,7 +24,7 @@ public class AlertaEstoquePublisher {
         try {
             rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.RK_ALERTA, evento);
         } catch (AmqpException e) {
-            log.error("Não foi possível publicar o alerta {} no RabbitMQ: {}", evento.alertaId(), e.getMessage());
+            log.error("Could not publish alert {} to RabbitMQ: {}", evento.alertaId(), e.getMessage());
         }
     }
 }

@@ -1,5 +1,5 @@
-// Mock do SAP Business One Service Layer (sem dependências). Uso: node mock-sap.js
-// Sobe em http://localhost:50000. MOCK_FAIL=1 faz os POSTs de documento falharem (testa o reenvio).
+// Mock of the SAP Business One Service Layer (no dependencies). Usage: node mock-sap.js
+// Listens on http://localhost:50000. MOCK_FAIL=1 makes document POSTs fail (to test the retry).
 const http = require('http');
 const { URL } = require('url');
 
@@ -44,7 +44,7 @@ http.createServer(async (req, res) => {
 
   const cookie = req.headers['cookie'] || '';
   if (!cookie.includes(`B1SESSION=${SESSION}`)) {
-    console.log('  401: sessão inválida');
+    console.log('  401: invalid session');
     return sapError(res, 401, 301, 'Invalid session.');
   }
 
@@ -64,7 +64,7 @@ http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST') {
-    if (process.env.MOCK_FAIL === '1') return sapError(res, 500, -2028, 'Falha simulada (MOCK_FAIL=1)');
+    if (process.env.MOCK_FAIL === '1') return sapError(res, 500, -2028, 'Simulated failure (MOCK_FAIL=1)');
     const doc = await readBody(req);
     if (!doc || !Array.isArray(doc.DocumentLines) || doc.DocumentLines.length === 0) {
       return sapError(res, 400, -10, 'DocumentLines é obrigatório');
@@ -72,12 +72,12 @@ http.createServer(async (req, res) => {
     for (const l of doc.DocumentLines) {
       if (!l.ItemCode || !(l.Quantity > 0)) return sapError(res, 400, -10, 'Linha inválida: ItemCode/Quantity');
     }
-    const salvo = { DocEntry: nextDocEntry++, ...doc };
-    docs[entity].push(salvo);
-    console.log(`  ${entity} criado, DocEntry=${salvo.DocEntry}, Reference2=${doc.Reference2}`);
+    const saved = { DocEntry: nextDocEntry++, ...doc };
+    docs[entity].push(saved);
+    console.log(`  ${entity} created, DocEntry=${saved.DocEntry}, Reference2=${doc.Reference2}`);
     console.log(JSON.stringify(doc, null, 2).split('\n').map((x) => '    ' + x).join('\n'));
-    return send(res, 201, salvo);
+    return send(res, 201, saved);
   }
 
   return sapError(res, 405, -1, 'Método não suportado');
-}).listen(PORT, () => console.log(`Mock SAP B1 Service Layer em http://localhost:${PORT}`));
+}).listen(PORT, () => console.log(`Mock SAP B1 Service Layer listening on http://localhost:${PORT}`));

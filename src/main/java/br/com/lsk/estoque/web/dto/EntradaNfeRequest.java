@@ -15,7 +15,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 public record EntradaNfeRequest(
-        @NotBlank @Pattern(regexp = "\\d{44}", message = "chaveAcesso deve ter 44 dígitos") String chaveAcesso,
+        @NotBlank @Pattern(regexp = "\\d{44}", message = "chaveAcesso must have 44 digits") String chaveAcesso,
         @Size(max = 60) String numero,
         @NotEmpty List<@Valid Item> itens) {
 

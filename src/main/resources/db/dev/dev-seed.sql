@@ -1,4 +1,4 @@
--- Dados de exemplo (DEV). Executar manualmente:
+-- Sample data (DEV). Run manually:
 --   psql -h localhost -U lsk -d lsk_estoque -f src/main/resources/db/dev/dev-seed.sql
 INSERT INTO categorias (nome, descricao) VALUES
   ('Suprimentos de TI', 'Toners, cartuchos, mídias'),

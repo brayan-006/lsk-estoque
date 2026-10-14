@@ -30,20 +30,17 @@ public class ProcessarVendaService {
     private final EstoqueMinimoService estoqueMinimo;
     private final ApplicationEventPublisher eventos;
 
-    /**
-     * Uma transação por evento: idempotência + baixa FEFO de todos os itens + avaliação de estoque mínimo.
-     * Tudo ou nada. A notificação ao SAP B1 só acontece depois do commit (ver SapSyncTrigger).
-     */
+    /** One transaction per event: idempotency, FEFO for every item and the minimum-stock check. All or nothing. */
     @Transactional
     public Resultado processar(VendaEvent evento) {
         String referencia = "VENDA-" + evento.eventId();
 
         if (!idempotencia.registrar(referencia, "VENDA")) {
-            log.warn("Evento de venda {} já processado; ignorando (idempotência)", evento.eventId());
+            log.warn("Sale event {} already processed; ignoring (idempotency)", evento.eventId());
             return Resultado.DUPLICADO;
         }
 
-        // Ordem determinística de SKUs: evita deadlock entre eventos concorrentes com itens em comum
+        // fixed SKU order avoids deadlocks between concurrent events
         var itens = evento.itens().stream()
                 .sorted(Comparator.comparing(VendaEvent.ItemVenda::sku))
                 .toList();
@@ -51,11 +48,11 @@ public class ProcessarVendaService {
         Map<String, Produto> afetados = new LinkedHashMap<>();
         for (VendaEvent.ItemVenda item : itens) {
             Produto produto = afetados.computeIfAbsent(item.sku(), sku -> produtos.buscarParaAtualizar(sku)
-                    .orElseThrow(() -> new RecursoNaoEncontradoException("Produto não encontrado: " + sku)));
+                    .orElseThrow(() -> new RecursoNaoEncontradoException("Product not found: " + sku)));
 
             var preco = item.precoUnitario() != null ? item.precoUnitario() : produto.getPrecoVenda();
             var baixados = baixaEstoque.darBaixa(produto, item.quantidade(), referencia, "VENDA", preco, evento.pedido());
-            log.info("Pedido {} | SKU {} | baixa de {} em {} lote(s): {}", evento.pedido(), item.sku(),
+            log.info("Order {} | SKU {} | deducted {} from {} batch(es): {}", evento.pedido(), item.sku(),
                     item.quantidade(), baixados.size(), baixados);
         }
 

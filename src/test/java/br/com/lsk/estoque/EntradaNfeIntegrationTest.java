@@ -32,7 +32,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Entrada de NF-e: lote, movimentação, custo médio, idempotência e validações (requer Docker). */
+/** NF-e receipt: batch, movement, average cost, idempotency and validations (requires Docker). */
 @SpringBootTest(properties = {
         "lsk.jobs.enabled=false",
         "spring.rabbitmq.listener.simple.auto-startup=false"
@@ -128,8 +128,6 @@ class EntradaNfeIntegrationTest {
         assertThatThrownBy(() -> entrada.registrarNfe(nfe("CHAVE-8", item("NAO-EXISTE", "L1", "1", "8", null))))
                 .isInstanceOf(RecursoNaoEncontradoException.class);
     }
-
-    // ------------------------------------------------------------------ helpers
 
     private static EntradaNfeCommand nfe(String chave, ItemEntrada... itens) {
         return new EntradaNfeCommand(chave, "123", List.of(itens));

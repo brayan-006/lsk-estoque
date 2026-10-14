@@ -11,10 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 
-/**
- * Serviço de domínio da baixa. A regra FEFO (com fallback PEPS) vive em UM lugar só: a procedure
- * pr_dar_baixa_fefo, que trava os lotes e baixa de forma atômica. Exige transação já aberta.
- */
+/** FEFO (with FIFO fallback) lives only in pr_dar_baixa_fefo. Requires an open transaction. */
 @Service
 @RequiredArgsConstructor
 public class BaixaEstoqueService {

@@ -33,10 +33,7 @@ public interface MovimentacaoRepository extends JpaRepository<Movimentacao, Long
                                        @Param("tipo") TipoMovimentacao tipo,
                                        @Param("status") StatusSap status);
 
-    /**
-     * "Reivindica" atomicamente as movimentações de uma referência (PENDENTE/ERRO -> ENVIANDO).
-     * Se duas threads/instâncias disputarem, só uma recebe count > 0.
-     */
+    /** Atomically claims the movements of a reference (PENDENTE/ERRO to ENVIANDO); only one caller gets count > 0. */
     @Transactional
     @Modifying
     @Query("""
@@ -74,7 +71,7 @@ public interface MovimentacaoRepository extends JpaRepository<Movimentacao, Long
                        @Param("erro") String erro,
                        @Param("agora") OffsetDateTime agora);
 
-    /** Recoloca como PENDENTE o que ficou preso em ENVIANDO (instância caiu no meio do envio). */
+    /** Puts back to PENDENTE what got stuck in ENVIANDO (the instance died mid-send). */
     @Transactional
     @Modifying
     @Query("""

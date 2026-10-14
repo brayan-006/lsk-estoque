@@ -34,25 +34,21 @@ public class StockController {
     private final EntradaEstoqueService entrada;
     private final CurvaAbcService curvaAbc;
 
-    /** Posição em tempo real: saldo vendável + lotes na ordem em que serão consumidos (FEFO/PEPS). */
     @GetMapping("/estoque/{sku}")
     public EstoqueDetalhe consultar(@PathVariable String sku) {
         return consulta.consultar(sku);
     }
 
-    /** Entrada de NF-e (idempotente pela chave de acesso: reenvio devolve 409). */
     @PostMapping("/estoque/entradas/nfe")
     public ResponseEntity<ResultadoEntrada> entradaNfe(@Valid @RequestBody EntradaNfeRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(entrada.registrarNfe(request.toCommand()));
     }
 
-    /** Produtos de uma classe da Curva ABC: GET /api/v1/produtos?classe=A */
     @GetMapping("/produtos")
     public List<ProdutoAbcView> listarPorClasse(@RequestParam("classe") String classe) {
         return consulta.listarPorClasse(parseClasse(classe));
     }
 
-    /** Recalcula a Curva ABC sob demanda (o job noturno faz o mesmo). */
     @PostMapping("/estoque/curva-abc/recalcular")
     public ResultadoCurvaAbc recalcularCurvaAbc() {
         return curvaAbc.recalcular();
@@ -62,7 +58,7 @@ public class StockController {
         try {
             return ClasseAbc.valueOf(valor.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new RegraDeNegocioException("Classe ABC inválida: '" + valor + "'. Use A, B ou C.");
+            throw new RegraDeNegocioException("Invalid ABC class: '" + valor + "'. Use A, B or C.");
         }
     }
 }

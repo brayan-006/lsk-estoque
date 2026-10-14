@@ -7,7 +7,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-/** Posição de estoque em tempo real de um SKU. */
 public record EstoqueDetalhe(String sku, String descricao, String unidade, ClasseAbc classeAbc,
                              BigDecimal saldoDisponivel, BigDecimal estoqueMinimo, boolean abaixoDoMinimo,
                              BigDecimal custoMedio, List<LoteDetalhe> lotesEmOrdemDeSaida) {

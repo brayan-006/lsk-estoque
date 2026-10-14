@@ -10,8 +10,8 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Dispara o envio ao SAP somente DEPOIS do commit (nunca notifica o ERP de algo que foi revertido)
- * e fora da thread do consumidor RabbitMQ. Se falhar, a movimentação fica PENDENTE/ERRO e o job retenta.
+ * Runs after the commit, so the ERP is never told about something that was rolled back.
+ * If it fails, the movement stays PENDENTE/ERRO and the retry job picks it up.
  */
 @Slf4j
 @Component
@@ -26,7 +26,7 @@ public class SapSyncTrigger {
         try {
             sapSync.sincronizar(evento.referencia(), evento.tipo());
         } catch (Exception e) {
-            log.error("Erro inesperado ao sincronizar {} com o SAP: {}", evento.referencia(), e.getMessage(), e);
+            log.error("Unexpected error while syncing {} with SAP: {}", evento.referencia(), e.getMessage(), e);
         }
     }
 }

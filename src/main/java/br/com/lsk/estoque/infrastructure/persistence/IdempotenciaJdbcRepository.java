@@ -12,9 +12,8 @@ public class IdempotenciaJdbcRepository implements IdempotenciaRepository {
     private final JdbcTemplate jdbc;
 
     /**
-     * INSERT ... ON CONFLICT DO NOTHING: com duas transações concorrentes na mesma chave, a segunda
-     * espera o commit da primeira e então não insere nada (retorna false). Como roda na transação
-     * do processamento, se a baixa falhar a chave também é desfeita e a mensagem pode ser reprocessada.
+     * ON CONFLICT DO NOTHING makes a concurrent duplicate wait for the first commit and insert nothing.
+     * It runs inside the processing transaction, so a failed deduction also rolls the key back.
      */
     @Override
     public boolean registrar(String chave, String tipo) {

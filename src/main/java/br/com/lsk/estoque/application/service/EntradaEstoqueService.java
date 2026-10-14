@@ -47,7 +47,7 @@ public class EntradaEstoqueService {
     public ResultadoEntrada registrarNfe(EntradaNfeCommand cmd) {
         String referencia = "NFE-" + cmd.chaveAcesso();
         if (!idempotencia.registrar(referencia, "NFE")) {
-            throw new OperacaoDuplicadaException("NF-e já recebida: " + cmd.chaveAcesso());
+            throw new OperacaoDuplicadaException("NF-e already received: " + cmd.chaveAcesso());
         }
 
         var itens = cmd.itens().stream()
@@ -60,9 +60,9 @@ public class EntradaEstoqueService {
         for (ItemEntrada item : itens) {
             validarItem(item);
             Produto produto = afetados.computeIfAbsent(item.sku(), sku -> produtos.buscarParaAtualizar(sku)
-                    .orElseThrow(() -> new RecursoNaoEncontradoException("Produto não encontrado: " + sku)));
+                    .orElseThrow(() -> new RecursoNaoEncontradoException("Product not found: " + sku)));
             if (!produto.isAtivo()) {
-                throw new RegraDeNegocioException("Produto inativo: " + item.sku());
+                throw new RegraDeNegocioException("Inactive product: " + item.sku());
             }
             validarValidade(produto, item);
 
@@ -100,43 +100,43 @@ public class EntradaEstoqueService {
 
         afetados.values().forEach(estoqueMinimo::avaliar);
         eventos.publishEvent(new MovimentacaoRegistradaEvent(referencia, TipoMovimentacao.ENTRADA));
-        log.info("NF-e {} recebida: {} item(ns)", cmd.chaveAcesso(), resultado.size());
+        log.info("NF-e {} received: {} item(s)", cmd.chaveAcesso(), resultado.size());
         return new ResultadoEntrada(referencia, resultado.size(), resultado);
     }
 
     private void validarItem(ItemEntrada item) {
         if (item.quantidade() == null || item.quantidade().signum() <= 0) {
-            throw new RegraDeNegocioException("Quantidade deve ser maior que zero (SKU " + item.sku() + ")");
+            throw new RegraDeNegocioException("Quantity must be greater than zero (SKU " + item.sku() + ")");
         }
         if (item.custoUnitario() == null || item.custoUnitario().signum() < 0) {
-            throw new RegraDeNegocioException("Custo unitário inválido (SKU " + item.sku() + ")");
+            throw new RegraDeNegocioException("Invalid unit cost (SKU " + item.sku() + ")");
         }
     }
 
     private void validarValidade(Produto produto, ItemEntrada item) {
         if (item.dataValidade() == null && produto.isControlaValidade()) {
-            throw new RegraDeNegocioException("SKU %s controla validade: informe dataValidade do lote %s"
+            throw new RegraDeNegocioException("SKU %s controls expiry: dataValidade is required for batch %s"
                     .formatted(item.sku(), item.codigoLote()));
         }
         if (item.dataValidade() != null && item.dataValidade().isBefore(LocalDate.now())) {
-            throw new RegraDeNegocioException("Lote %s do SKU %s já está vencido (%s)"
+            throw new RegraDeNegocioException("Batch %s of SKU %s is already expired (%s)"
                     .formatted(item.codigoLote(), item.sku(), item.dataValidade()));
         }
         if (item.dataFabricacao() != null && item.dataValidade() != null
                 && item.dataValidade().isBefore(item.dataFabricacao())) {
-            throw new RegraDeNegocioException("Validade anterior à fabricação no lote " + item.codigoLote());
+            throw new RegraDeNegocioException("Expiry before manufacturing date in batch " + item.codigoLote());
         }
     }
 
-    /** Mesmo código de lote já existente para o produto: soma a quantidade (reentrada/complemento). */
+    /** Same batch code already exists for the product: adds to the existing quantity. */
     private Lote acumular(Lote lote, ItemEntrada item) {
         if (lote.getStatus() == StatusLote.VENCIDO || lote.getStatus() == StatusLote.BLOQUEADO) {
-            throw new RegraDeNegocioException("Lote %s do SKU %s está %s e não pode receber entrada"
+            throw new RegraDeNegocioException("Batch %s of SKU %s is %s and cannot receive stock"
                     .formatted(lote.getCodigoLote(), item.sku(), lote.getStatus()));
         }
         if (item.dataValidade() != null && lote.getDataValidade() != null
                 && !item.dataValidade().equals(lote.getDataValidade())) {
-            throw new RegraDeNegocioException("Lote %s já existe com outra validade (%s)"
+            throw new RegraDeNegocioException("Batch %s already exists with a different expiry (%s)"
                     .formatted(lote.getCodigoLote(), lote.getDataValidade()));
         }
         lote.setQuantidadeInicial(lote.getQuantidadeInicial().add(item.quantidade()));
@@ -145,7 +145,7 @@ public class EntradaEstoqueService {
         return lote;
     }
 
-    /** Custo médio ponderado: (saldo x custo atual + qtd x custo novo) / (saldo + qtd). */
+    /** Weighted average cost. */
     private BigDecimal novoCustoMedio(BigDecimal custoAtual, BigDecimal saldoAntes, ItemEntrada item) {
         BigDecimal valorAntes = saldoAntes.multiply(custoAtual);
         BigDecimal valorEntrada = item.quantidade().multiply(item.custoUnitario());

@@ -68,7 +68,7 @@ public class RabbitConfig {
         return BindingBuilder.bind(filaAlertas()).to(estoqueExchange()).with(RK_ALERTA);
     }
 
-    /** JSON (Jackson do Spring Boot, já com suporte a java.time) para publicar e consumir. */
+    /** JSON converter shared by the publisher and the listeners. */
     @Bean
     MessageConverter jsonMessageConverter(ObjectMapper objectMapper) {
         return new Jackson2JsonMessageConverter(objectMapper);

@@ -10,7 +10,7 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: validate          # o schema é dono do Flyway; o Hibernate só valida
+      ddl-auto: validate          # Flyway owns the schema; Hibernate only validates
     properties:
       hibernate:
         jdbc.time_zone: UTC
@@ -30,7 +30,7 @@ spring:
         concurrency: 2
         max-concurrency: 8
         prefetch: 10
-        default-requeue-rejected: false     # falhou de vez -> DLQ
+        default-requeue-rejected: false     # failed for good -> DLQ
         retry:
           enabled: true
           initial-interval: 1s
@@ -64,5 +64,5 @@ lsk:
     username: ${SAP_USER:manager}
     password: ${SAP_PASSWORD:manager}
     warehouse-code: ${SAP_WAREHOUSE:01}
-    insecure-ssl: ${SAP_INSECURE_SSL:false}   # só para DEV com certificado autoassinado
+    insecure-ssl: ${SAP_INSECURE_SSL:false}   # DEV only, for self-signed certificates
     send-batches: true

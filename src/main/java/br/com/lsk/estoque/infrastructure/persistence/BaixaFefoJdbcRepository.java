@@ -17,7 +17,7 @@ import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.util.List;
 
-/** Chama pr_dar_baixa_fefo na MESMA conexão/transação do chamador (JpaTransactionManager). */
+/** Calls pr_dar_baixa_fefo on the caller's connection, so it joins the current transaction. */
 @Repository
 @RequiredArgsConstructor
 public class BaixaFefoJdbcRepository implements BaixaFefoRepository {
@@ -49,10 +49,10 @@ public class BaixaFefoJdbcRepository implements BaixaFefoRepository {
                     throw new EstoqueInsuficienteException(produto.getSku(), quantidade);
                 }
                 if ("LSK02".equals(estado)) {
-                    throw new RegraDeNegocioException("Quantidade inválida para o SKU " + produto.getSku());
+                    throw new RegraDeNegocioException("Invalid quantity for SKU " + produto.getSku());
                 }
                 if ("LSK03".equals(estado)) {
-                    throw new RecursoNaoEncontradoException("Produto inexistente ou inativo: " + produto.getSku());
+                    throw new RecursoNaoEncontradoException("Product not found or inactive: " + produto.getSku());
                 }
             }
             throw e;

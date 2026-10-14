@@ -24,9 +24,8 @@ public interface LoteRepository extends JpaRepository<Lote, Long> {
     }
 
     /**
-     * Lotes disponíveis na ORDEM EM QUE SERÃO CONSUMIDOS (espelha a pr_dar_baixa_fefo):
-     * 1) com validade, do que vence primeiro ao último; 2) sem validade por ordem de entrada (PEPS).
-     * Ignora lotes vencidos, bloqueados e esgotados.
+     * Available batches in the order they will be consumed (mirrors the function): with expiry first,
+     * then FIFO. Skips expired, blocked and empty batches.
      */
     @Query("""
             select l from Lote l
@@ -39,7 +38,7 @@ public interface LoteRepository extends JpaRepository<Lote, Long> {
             """)
     List<Lote> findDisponiveisEmOrdemFefo(@Param("produtoId") Long produtoId);
 
-    /** Ordenação PEPS pura (por entrada), útil para produtos que não controlam validade. */
+    /** Pure FIFO order, for products that do not control expiry. */
     @Query("""
             select l from Lote l
              where l.produto.id = :produtoId
@@ -49,7 +48,7 @@ public interface LoteRepository extends JpaRepository<Lote, Long> {
             """)
     List<Lote> findDisponiveisEmOrdemPeps(@Param("produtoId") Long produtoId);
 
-    /** Lotes ativos que vencem até a data informada (alertas de vencimento próximo). */
+    /** Active batches expiring up to the given date. */
     @Query("""
             select l from Lote l join fetch l.produto
              where l.status = br.com.lsk.estoque.domain.model.StatusLote.ATIVO

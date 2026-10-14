@@ -37,7 +37,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Processamento de venda (idempotência, erros de negócio) e estoque mínimo (requer Docker). */
+/** Sale processing (idempotency, business errors) and minimum stock (requires Docker). */
 @SpringBootTest(properties = {
         "lsk.jobs.enabled=false",
         "spring.rabbitmq.listener.simple.auto-startup=false"
@@ -60,7 +60,7 @@ class VendaIntegrationTest {
     @Autowired EntityManager em;
 
     @Test
-    void mesmoEventIdNaoBaixaDuasVezes() {
+    void sameEventIdNeverDeductsTwice() {
         Produto p = produto("VND-1", "0");
         lote(p, "L1", 10);
         VendaEvent evento = venda("VND-1", "3");
@@ -73,31 +73,30 @@ class VendaIntegrationTest {
     }
 
     @Test
-    void saldoInsuficienteLancaErroEMantemOSaldo() {
+    void insufficientStockIsRejected() {
         Produto p = produto("VND-2", "0");
         lote(p, "L1", 2);
 
         assertThatThrownBy(() -> vendas.processar(venda("VND-2", "5")))
                 .isInstanceOf(EstoqueInsuficienteException.class);
-        
     }
 
     @Test
-    void skuInexistenteLancaErro() {
+    void unknownSkuIsRejected() {
         assertThatThrownBy(() -> vendas.processar(venda("NAO-EXISTE", "1")))
                 .isInstanceOf(RecursoNaoEncontradoException.class);
     }
 
     @Test
-    void abreAlertaNoMinimoNaoDuplicaEFechaComNovaEntrada() {
+    void alertOpensAtMinimumStaysSingleAndClosesOnReceipt() {
         Produto p = produto("VND-3", "5");
         lote(p, "L1", 10);
 
-        vendas.processar(venda("VND-3", "5")); // saldo 5 (= mínimo)
+        vendas.processar(venda("VND-3", "5")); // balance 5 (= minimum)
         assertThat(alertaAberto(p)).isTrue();
         assertThat(totalAlertas(p)).isEqualTo(1);
 
-        vendas.processar(venda("VND-3", "1")); // saldo 4: continua um único alerta
+        vendas.processar(venda("VND-3", "1")); // balance 4: still a single alert
         assertThat(totalAlertas(p)).isEqualTo(1);
 
         entrada.registrarNfe(new EntradaNfeCommand("CHAVE-VND-3", "1", List.of(
@@ -107,16 +106,14 @@ class VendaIntegrationTest {
     }
 
     @Test
-    void naoAbreAlertaQuandoOMinimoENaoAtingido() {
+    void noAlertWhileAboveMinimum() {
         Produto p = produto("VND-4", "5");
         lote(p, "L1", 10);
 
-        vendas.processar(venda("VND-4", "2")); // saldo 8
+        vendas.processar(venda("VND-4", "2")); // balance 8
 
         assertThat(totalAlertas(p)).isZero();
     }
-
-    // ------------------------------------------------------------------ helpers
 
     private static VendaEvent venda(String sku, String qtd) {
         return new VendaEvent(UUID.randomUUID(), "PED-" + UUID.randomUUID(), OffsetDateTime.now(),

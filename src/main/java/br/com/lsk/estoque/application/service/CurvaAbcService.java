@@ -18,10 +18,7 @@ public class CurvaAbcService {
     private final ProdutoRepository produtos;
     private final EstoqueProperties props;
 
-    /**
-     * Recalcula a Curva ABC (faturamento da janela configurada, giro como desempate).
-     * A: até 80% do faturamento acumulado | B: até 95% | C: o restante e quem não vendeu na janela.
-     */
+    /** ABC by revenue over the configured window, with turnover as the tiebreaker. */
     @Transactional
     public ResultadoCurvaAbc recalcular() {
         OffsetDateTime agora = OffsetDateTime.now();
@@ -30,7 +27,7 @@ public class CurvaAbcService {
         int reclassificados = produtos.atualizarClassesComVendas(desde, props.limiteClasseA(), props.limiteClasseB());
         int rebaixados = produtos.rebaixarSemVendas(desde);
 
-        log.info("Curva ABC recalculada (janela {} dias): {} reclassificados, {} rebaixados para C",
+        log.info("ABC analysis recalculated (window {} days): {} reclassified, {} downgraded to C",
                 props.janelaAbcDias(), reclassificados, rebaixados);
         return new ResultadoCurvaAbc(reclassificados, rebaixados, props.janelaAbcDias(), agora);
     }

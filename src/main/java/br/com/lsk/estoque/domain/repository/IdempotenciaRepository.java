@@ -1,12 +1,8 @@
 package br.com.lsk.estoque.domain.repository;
 
-/** Registro de chaves já processadas (eventos de venda, NF-e). */
+/** Registry of processed keys (sale events, NF-e). */
 public interface IdempotenciaRepository {
 
-    /**
-     * Tenta registrar a chave na transação corrente.
-     *
-     * @return true se foi a primeira vez; false se a chave já existia (duplicado)
-     */
+    /** Returns true the first time a key is registered in the current transaction, false for a duplicate. */
     boolean registrar(String chave, String tipo);
 }

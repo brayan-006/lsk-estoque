@@ -19,14 +19,14 @@ public interface ProdutoRepository extends JpaRepository<Produto, Long> {
 
     Optional<Produto> findBySku(String sku);
 
-    /** Leitura com lock pessimista (SELECT ... FOR UPDATE) para serializar operações no mesmo SKU. */
+    /** SELECT ... FOR UPDATE, to serialize operations on the same SKU. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from Produto p where p.sku = :sku")
     Optional<Produto> buscarParaAtualizar(@Param("sku") String sku);
 
     List<Produto> findByClasseAbcAndAtivoTrueOrderBySkuAsc(ClasseAbc classeAbc);
 
-    /** Produtos ativos cujo saldo vendável (lotes ativos e não vencidos) está no mínimo ou abaixo dele. */
+    /** Active products whose sellable balance is at or below the minimum. */
     @Query(value = """
             SELECT p.*
               FROM produtos p
@@ -42,9 +42,8 @@ public interface ProdutoRepository extends JpaRepository<Produto, Long> {
     List<Produto> findAbaixoDoMinimo();
 
     /**
-     * Curva ABC por faturamento (preço x quantidade das saídas de VENDA na janela), com o giro
-     * (quantidade vendida) como critério de desempate. Um produto é A se a participação acumulada
-     * ANTES dele ainda não atingiu o limite A (assim um produto que sozinho passa de 80% continua A).
+     * ABC by revenue (price x quantity of VENDA outflows in the window), with turnover as the tiebreaker.
+     * A product is class A while the cumulative share before it is still under the A limit.
      */
     @Modifying
     @Query(value = """
@@ -81,7 +80,7 @@ public interface ProdutoRepository extends JpaRepository<Produto, Long> {
                                   @Param("limiteA") BigDecimal limiteA,
                                   @Param("limiteB") BigDecimal limiteB);
 
-    /** Produtos sem faturamento na janela caem para a classe C. */
+    /** Products without revenue in the window drop to class C. */
     @Modifying
     @Query(value = """
             UPDATE produtos p

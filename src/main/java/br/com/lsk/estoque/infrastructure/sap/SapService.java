@@ -35,17 +35,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/**
- * Cliente do SAP Business One Service Layer.
- *
- * <ul>
- *   <li>Autentica em POST /b1s/v1/Login e mantém o cookie B1SESSION (+ ROUTEID, se houver balanceador);</li>
- *   <li>renova a sessão antes de expirar e, em caso de 401, refaz o login e repete a chamada uma vez;</li>
- *   <li>GoodsIssue  -> entidade InventoryGenExits  (Saída de Mercadorias, OIGE);</li>
- *   <li>GoodsReceipt -> entidade InventoryGenEntries (Entrada de Mercadorias, OIGN);</li>
- *   <li>idempotência: antes de criar, procura documento com o mesmo Reference2 (= referência do evento).</li>
- * </ul>
- */
+/** Client for the SAP Business One Service Layer: session handling, goods issue/receipt and idempotency by Reference2. */
 @Slf4j
 @Service
 public class SapService implements ErpGateway {
@@ -55,7 +45,6 @@ public class SapService implements ErpGateway {
     private static final String GOODS_ISSUE = "/b1s/v1/InventoryGenExits";
     private static final String GOODS_RECEIPT = "/b1s/v1/InventoryGenEntries";
 
-    // ---- payloads do Service Layer ----
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Document(@JsonProperty("DocDate") String docDate,
                            @JsonProperty("Reference2") String reference2,
@@ -96,7 +85,7 @@ public class SapService implements ErpGateway {
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(props.connectTimeout());
         if (props.insecureSsl()) {
-            log.warn("lsk.sap.insecure-ssl=true: validação de certificado DESLIGADA (use apenas em desenvolvimento)");
+            log.warn("lsk.sap.insecure-ssl=true: certificate validation is OFF (development only)");
             client.sslContext(sslContextInseguro());
         }
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(client.build());
@@ -124,14 +113,12 @@ public class SapService implements ErpGateway {
         return registrar(GOODS_RECEIPT, documento, true);
     }
 
-    // ------------------------------------------------------------------ documentos
-
     private Long registrar(String endpoint, DocumentoEstoque documento, boolean entrada) {
         Document payload = toPayload(documento, entrada);
         return comSessao(cookie -> {
             Long existente = buscarPorReferencia(cookie, endpoint, documento.referencia());
             if (existente != null) {
-                log.info("SAP B1: documento com Reference2={} já existe (DocEntry {}); reaproveitando",
+                log.info("SAP B1: document with Reference2={} already exists (DocEntry {}); reusing it",
                         documento.referencia(), existente);
                 return existente;
             }
@@ -143,7 +130,7 @@ public class SapService implements ErpGateway {
                     .retrieve()
                     .body(JsonNode.class);
             if (resposta == null || !resposta.hasNonNull("DocEntry")) {
-                throw new SapException("Resposta do SAP sem DocEntry ao criar documento em " + endpoint);
+                throw new SapException("SAP response without DocEntry when creating a document at " + endpoint);
             }
             return resposta.get("DocEntry").asLong();
         });
@@ -184,24 +171,22 @@ public class SapService implements ErpGateway {
         return new Document(doc.data().toString(), doc.referencia(), comentario, linhas);
     }
 
-    // ------------------------------------------------------------------ sessão (B1SESSION)
-
     private <T> T comSessao(Function<String, T> chamada) {
         try {
             try {
                 return chamada.apply(cookieAtual());
             } catch (HttpClientErrorException.Unauthorized e) {
-                log.info("Sessão do SAP B1 expirada; refazendo login");
+                log.info("SAP B1 session expired; logging in again");
                 invalidarSessao();
                 return chamada.apply(cookieAtual());
             }
         } catch (SapException e) {
             throw e;
         } catch (RestClientResponseException e) {
-            throw new SapException("SAP B1 respondeu HTTP %d: %s".formatted(e.getStatusCode().value(),
+            throw new SapException("SAP B1 answered HTTP %d: %s".formatted(e.getStatusCode().value(),
                     e.getResponseBodyAsString()), e);
         } catch (RestClientException e) {
-            throw new SapException("Falha de comunicação com o SAP B1: " + e.getMessage(), e);
+            throw new SapException("Communication failure with SAP B1: " + e.getMessage(), e);
         }
     }
 
@@ -250,13 +235,13 @@ public class SapService implements ErpGateway {
                 .map(c -> c.split(";", 2)[0].trim())
                 .collect(Collectors.joining("; "));
         if (!cookie.contains("B1SESSION=")) {
-            throw new SapException("Login no SAP B1 não devolveu o cookie B1SESSION");
+            throw new SapException("SAP B1 login did not return the B1SESSION cookie");
         }
 
         int timeoutMinutos = resposta.getBody() != null ? resposta.getBody().path("SessionTimeout").asInt(30) : 30;
-        // renova 2 minutos antes do timeout informado pelo servidor
+        // renew 2 minutes before the timeout reported by the server
         Instant expira = Instant.now().plus(Duration.ofMinutes(Math.max(1, timeoutMinutos - 2)));
-        log.info("Sessão SAP B1 aberta (válida por ~{} min)", Math.max(1, timeoutMinutos - 2));
+        log.info("SAP B1 session opened (valid for ~{} min)", Math.max(1, timeoutMinutos - 2));
         return new Session(cookie, expira);
     }
 
@@ -269,11 +254,9 @@ public class SapService implements ErpGateway {
         try {
             http.post().uri(LOGOUT).header(HttpHeaders.COOKIE, atual.cookie()).retrieve().toBodilessEntity();
         } catch (Exception e) {
-            log.debug("Logout no SAP B1 falhou (ignorado): {}", e.getMessage());
+            log.debug("SAP B1 logout failed (ignored): {}", e.getMessage());
         }
     }
-
-    // ------------------------------------------------------------------ SSL (somente DEV)
 
     private static SSLContext sslContextInseguro() {
         try {
@@ -311,7 +294,7 @@ public class SapService implements ErpGateway {
             contexto.init(null, confiaEmTudo, new SecureRandom());
             return contexto;
         } catch (GeneralSecurityException e) {
-            throw new IllegalStateException("Não foi possível criar o SSLContext de desenvolvimento", e);
+            throw new IllegalStateException("Could not create the development SSLContext", e);
         }
     }
 }

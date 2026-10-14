@@ -6,16 +6,13 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * Evento de venda confirmada (payload JSON da fila lsk.estoque.vendas.q).
- * O eventId é a chave de idempotência: o mesmo eventId nunca baixa estoque duas vezes.
- */
+/** Sale confirmed event. The eventId is the idempotency key: the same eventId never deducts stock twice. */
 public record VendaEvent(UUID eventId, String pedido, OffsetDateTime ocorridoEm, List<ItemVenda> itens) {
 
     public VendaEvent {
-        Objects.requireNonNull(eventId, "eventId é obrigatório");
+        Objects.requireNonNull(eventId, "eventId is required");
         if (itens == null || itens.isEmpty()) {
-            throw new IllegalArgumentException("O evento de venda precisa ter ao menos um item");
+            throw new IllegalArgumentException("A sale event needs at least one item");
         }
         itens = List.copyOf(itens);
     }
@@ -24,13 +21,13 @@ public record VendaEvent(UUID eventId, String pedido, OffsetDateTime ocorridoEm,
 
         public ItemVenda {
             if (sku == null || sku.isBlank()) {
-                throw new IllegalArgumentException("sku é obrigatório");
+                throw new IllegalArgumentException("sku is required");
             }
             if (quantidade == null || quantidade.signum() <= 0) {
-                throw new IllegalArgumentException("quantidade deve ser maior que zero (sku " + sku + ")");
+                throw new IllegalArgumentException("quantity must be greater than zero (sku " + sku + ")");
             }
             if (precoUnitario != null && precoUnitario.signum() < 0) {
-                throw new IllegalArgumentException("precoUnitario não pode ser negativo (sku " + sku + ")");
+                throw new IllegalArgumentException("precoUnitario cannot be negative (sku " + sku + ")");
             }
         }
     }

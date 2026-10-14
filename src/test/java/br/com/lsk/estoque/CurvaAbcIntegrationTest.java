@@ -25,7 +25,7 @@ import java.time.OffsetDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Curva ABC por faturamento: A até 80%, B até 95%, C o restante e quem não vendeu (requer Docker). */
+/** ABC by revenue: A up to 80 %, B up to 95 %, C the rest and items without sales (requires Docker). */
 @SpringBootTest(properties = {
         "lsk.jobs.enabled=false",
         "spring.rabbitmq.listener.simple.auto-startup=false"
@@ -48,25 +48,23 @@ class CurvaAbcIntegrationTest {
 
     @Test
     void classificaPorFaturamentoERebaixaQuemNaoVendeu() {
-        // Faturamento: P1 = 1000, P2 = 300, P3 = 100, P4 = 10 (total 1410)
+        // revenue: P1 = 1000, P2 = 300, P3 = 100, P4 = 10 (total 1410)
         Produto p1 = vendido("ABC-1", 10, "100");
         Produto p2 = vendido("ABC-2", 3, "100");
         Produto p3 = vendido("ABC-3", 1, "100");
         Produto p4 = vendido("ABC-4", 1, "10");
         Produto p5 = produto("ABC-5");
-        p5.setClasseAbc(ClasseAbc.A); // classe antiga, sem vendas na janela
+        p5.setClasseAbc(ClasseAbc.A); // old class, no sales in the window
         produtos.saveAndFlush(p5);
 
         curvaAbc.recalcular();
 
-        assertThat(classe(p1)).isEqualTo("A"); // 0% acumulado antes
-        assertThat(classe(p2)).isEqualTo("A"); // ~70,9% antes (< 80%)
-        assertThat(classe(p3)).isEqualTo("B"); // ~92,2% antes (< 95%)
-        assertThat(classe(p4)).isEqualTo("C"); // ~99,3% antes
-        assertThat(classe(p5)).isEqualTo("C"); // sem vendas: rebaixado
+        assertThat(classe(p1)).isEqualTo("A"); // 0 % accumulated before it
+        assertThat(classe(p2)).isEqualTo("A"); // ~70.9 % before it (< 80 %)
+        assertThat(classe(p3)).isEqualTo("B"); // ~92.2 % before it (< 95 %)
+        assertThat(classe(p4)).isEqualTo("C"); // ~99.3 % before it
+        assertThat(classe(p5)).isEqualTo("C"); // no sales: downgraded
     }
-
-    // ------------------------------------------------------------------ helpers
 
     private Produto vendido(String sku, int qtd, String preco) {
         Produto p = produto(sku);

@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-/** Documento de estoque neutro (independente de ERP). */
+/** ERP-neutral stock document. */
 public record DocumentoEstoque(String referencia, LocalDate data, String comentario, List<Linha> linhas) {
 
     public record Linha(String itemCode, BigDecimal quantidade, BigDecimal custoUnitario, List<Lote> lotes) {

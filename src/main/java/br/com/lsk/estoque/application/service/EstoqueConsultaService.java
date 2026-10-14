@@ -32,7 +32,7 @@ public class EstoqueConsultaService {
     @Transactional(readOnly = true)
     public EstoqueDetalhe consultar(String sku) {
         Produto produto = produtos.findBySku(sku)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Produto não encontrado: " + sku));
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Product not found: " + sku));
 
         List<Lote> disponiveis = lotes.findDisponiveisEmOrdemFefo(produto.getId());
         LocalDate hoje = LocalDate.now();

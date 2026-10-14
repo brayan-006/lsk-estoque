@@ -23,8 +23,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Envia ao ERP as movimentações já gravadas (outbox simples na própria tabela movimentacoes).
- * Propositalmente SEM @Transactional: a chamada HTTP ao SAP não segura conexão/transação de banco.
+ * Sends stored movements to the ERP (simple outbox on the movimentacoes table).
+ * Deliberately not @Transactional: the HTTP call must not hold a database transaction.
  */
 @Slf4j
 @Service
@@ -37,7 +37,7 @@ public class SapSyncService {
 
     public void sincronizar(String referencia, TipoMovimentacao tipo) {
         if (!erp.habilitado()) {
-            log.debug("Integração SAP desabilitada; {} {} permanece PENDENTE", tipo, referencia);
+            log.debug("SAP integration disabled; {} {} stays PENDENTE", tipo, referencia);
             return;
         }
         OffsetDateTime agora = OffsetDateTime.now();
@@ -54,14 +54,14 @@ public class SapSyncService {
                     ? erp.registrarSaida(documento)
                     : erp.registrarEntrada(documento);
             movimentacoes.finalizarEnvio(referencia, tipo, StatusSap.ENVIADO, docEntry, null, OffsetDateTime.now());
-            log.info("SAP B1: {} {} registrado (DocEntry {})", tipo, referencia, docEntry);
+            log.info("SAP B1: {} {} registered (DocEntry {})", tipo, referencia, docEntry);
         } catch (Exception e) {
             movimentacoes.finalizarEnvio(referencia, tipo, StatusSap.ERRO, null, truncar(e.getMessage()), OffsetDateTime.now());
-            log.error("Falha ao enviar {} {} ao SAP B1 (será retentado): {}", tipo, referencia, e.getMessage());
+            log.error("Failed to send {} {} to SAP B1 (will be retried): {}", tipo, referencia, e.getMessage());
         }
     }
 
-    /** Chamado pelo job: destrava envios presos e retenta o que está PENDENTE/ERRO. */
+    /** Job entry point: releases stuck sends and retries what is PENDENTE/ERRO. */
     public void reprocessarPendentes() {
         if (!erp.habilitado()) {
             return;
@@ -101,7 +101,7 @@ public class SapSyncService {
 
     private static String truncar(String mensagem) {
         if (mensagem == null) {
-            return "erro desconhecido";
+            return "unknown error";
         }
         return mensagem.length() <= 480 ? mensagem : mensagem.substring(0, 480);
     }
