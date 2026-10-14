@@ -6,12 +6,13 @@
 </p>
 
 <p align="center">
+  <img alt="CI" src="https://github.com/brayan-006/lsk-estoque/actions/workflows/ci.yml/badge.svg">
   <img alt="Java 17" src="https://img.shields.io/badge/Java-17-orange">
   <img alt="Spring Boot 3.5" src="https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F">
   <img alt="PostgreSQL 16" src="https://img.shields.io/badge/PostgreSQL-16-336791">
   <img alt="RabbitMQ 3.13" src="https://img.shields.io/badge/RabbitMQ-3.13-FF6600">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ED">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-18%20passing-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-25%20passing-brightgreen">
 </p>
 
 ---
@@ -23,6 +24,7 @@
 - [Architecture](#architecture)
 - [Tech stack](#tech-stack)
 - [Quick start](#quick-start)
+- [Dashboard](#dashboard)
 - [API](#api)
 - [Sales flow (event-driven)](#sales-flow-event-driven)
 - [SAP Business One integration](#sap-business-one-integration)
@@ -54,7 +56,8 @@ uses: a service that owns the physical stock, receives sales as messages, and ke
 - **Minimum-stock alerts** that open when the balance reaches the threshold and close automatically when it recovers.
 - **SAP B1 sync through an outbox**: asynchronous delivery after commit and automatic retries (up to 5 attempts).
 - **Dead-letter queue** for business errors (unknown SKU, insufficient stock) and malformed payloads.
-- **Swagger UI**, health checks and a one-command Docker setup.
+- **Operations dashboard** (React): register sales and goods receipts, manage products, watch alerts and retry failed SAP documents.
+- **Swagger UI**, health checks, CI on every push and a one-command Docker setup.
 
 ## Architecture
 
@@ -65,7 +68,8 @@ flowchart LR
     MQ -. business error .-> DLQ[(Dead-letter queue)]
     L --> P[ProcessarVendaService]
     P -- idempotency + FEFO<br/>one transaction --> DB[(PostgreSQL<br/>pr_dar_baixa_fefo)]
-    API[REST API<br/>NF-e, stock, ABC] --> DB
+    UI[React dashboard] -- REST --> API[REST API<br/>sales, NF-e, products, ABC]
+    API --> DB
     DB -- outbox: movimentacoes.sap_status --> SY[SAP sync<br/>after commit + retry job]
     SY --> SAP[SAP B1<br/>Service Layer]
     JOBS[Scheduled jobs<br/>ABC, minimum stock, expiry] --> DB
@@ -81,17 +85,19 @@ The code follows a layered, ports-and-adapters style: the domain does not know a
 | Database | PostgreSQL 16, Flyway migrations, PL/pgSQL function for the picking rule |
 | Messaging | RabbitMQ 3.13 (retry with backoff, dead-letter queue) |
 | ERP | SAP Business One Service Layer (REST) |
+| Front end | React 18, Vite, Recharts, served by nginx |
 | Tests | JUnit 5, AssertJ, Testcontainers |
 | Delivery | Docker multi-stage build, Docker Compose with health checks |
+| CI | GitHub Actions (backend tests and dashboard build) |
 | Docs | springdoc-openapi (Swagger UI), Postman/Insomnia collection |
 
 ## Quick start
 
-Requires Docker Desktop. The whole stack (application, PostgreSQL and RabbitMQ) starts with one command:
+Requires Docker Desktop. The whole stack (application, dashboard, PostgreSQL and RabbitMQ) starts with one command:
 
 ```bash
 docker compose up -d --build
-docker compose ps                        # wait until the three services are "healthy"
+docker compose ps                        # wait until the application is "healthy"
 curl http://localhost:8080/actuator/health
 ```
 
@@ -103,6 +109,7 @@ docker compose exec -T postgres psql -U lsk -d lsk_estoque < src/main/resources/
 
 | Service | URL |
 |---|---|
+| Dashboard | http://localhost:5173 |
 | API | http://localhost:8080 |
 | Swagger UI | http://localhost:8080/swagger-ui.html |
 | RabbitMQ management | http://localhost:15672 (guest / guest) |
@@ -110,12 +117,35 @@ docker compose exec -T postgres psql -U lsk -d lsk_estoque < src/main/resources/
 
 Reset everything with `docker compose down -v`.
 
+To work on the dashboard with hot reload, stop its container first (both use port 5173):
+
+```bash
+docker compose stop dashboard
+cd dashboard && npm install && npm run dev
+```
+
 To run the application outside Docker (for debugging):
 
 ```bash
 docker compose up -d postgres rabbitmq
 mvn spring-boot:run
 ```
+
+## Dashboard
+
+A React dashboard (Vite + Recharts) sits on top of the API. It is not a mock: every screen reads and writes real data,
+and it refreshes itself every 10 to 15 seconds.
+
+| | |
+|---|---|
+| ![Overview](docs/screenshots/overview.png) | ![Products](docs/screenshots/products.png) |
+| ![New sale](docs/screenshots/sale.png) | ![Movements](docs/screenshots/movements.png) |
+
+- **Overview**: indicators, ABC analysis chart with an on-demand recalculation, open minimum-stock alerts and the SAP integration state.
+- **Products**: search, stock level against the minimum, and a side panel with the batches in picking order (FEFO). Create, edit and remove products; removal is a soft delete and is refused while there is stock.
+- **New sale**: runs the same pipeline as the RabbitMQ listener and shows which batches were used. The form sends an idempotency key, so a double click never sells twice.
+- **Receive goods (NF-e)**: multi-item receipts with batch and expiry. Submitting the same access key again returns a conflict.
+- **Movements**: filters by type and SAP status, and a **Retry SAP** button for documents that failed.
 
 ## API
 
@@ -155,6 +185,21 @@ Example response of the stock query. Note `ordemDeSaida`: the batch with the ear
 ```
 
 A ready-to-import Postman/Insomnia collection is in [`docs/LSK-Estoque.postman_collection.json`](docs/LSK-Estoque.postman_collection.json).
+
+### Endpoints used by the dashboard
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/products` | Active products with balance, ABC class and minimum-stock flag |
+| `POST` | `/api/v1/products` | Create a product (reactivates a removed SKU) |
+| `PUT` | `/api/v1/products/{sku}` | Update description, unit, minimum stock and price; re-evaluates the alert |
+| `DELETE` | `/api/v1/products/{sku}` | Soft delete; refused while the product has stock |
+| `POST` | `/api/v1/sales` | Register a sale (FEFO, idempotent through `idempotencyKey`) |
+| `GET` | `/api/v1/alerts` | Open minimum-stock alerts |
+| `GET` | `/api/v1/movements?limit=50` | Recent movements with their SAP status |
+| `POST` | `/api/v1/movements/{id}/sap-retry` | Reset the retry counter and send the document now |
+| `GET` | `/api/v1/categories` | Category names |
+| `GET` | `/api/v1/system/status` | Whether the SAP integration is enabled |
 
 ## Sales flow (event-driven)
 
@@ -238,7 +283,7 @@ after restarting the mock without the flag, the retry job moves them to `ENVIADO
 ## Tests
 
 ```bash
-mvn test        # 18 integration tests on a real PostgreSQL via Testcontainers (requires Docker)
+mvn test        # 25 integration tests on a real PostgreSQL via Testcontainers (requires Docker)
 ```
 
 | Test class | Covers |
@@ -247,6 +292,7 @@ mvn test        # 18 integration tests on a real PostgreSQL via Testcontainers (
 | `EntradaNfeIntegrationTest` | Batch creation, idempotency by access key, weighted average cost, validations |
 | `VendaIntegrationTest` | Event idempotency, business errors, minimum-stock alert lifecycle |
 | `CurvaAbcIntegrationTest` | A/B/C classification and downgrade of items without sales |
+| `OperationsIntegrationTest` | Product creation, duplicated SKU, alert re-evaluation on minimum change, soft delete and reactivation |
 
 The tests run against a real database on purpose: the picking rule is SQL, so mocking the repository would test nothing.
 
@@ -260,24 +306,26 @@ web/             REST controller and error handling (RFC 9457 problem details)
 ```
 
 ```
-docs/            Postman/Insomnia collection
+dashboard/       React dashboard (Vite) with its own Dockerfile
+docs/            Postman/Insomnia collection and screenshots
+.github/         CI workflow
 mock-sap.js      SAP Service Layer mock for local development
 Dockerfile       multi-stage build (Maven, then a slim JRE image)
-docker-compose.yml   application + PostgreSQL + RabbitMQ with health checks
+docker-compose.yml   application + dashboard + PostgreSQL + RabbitMQ with health checks
 ```
 
 ## Status and limitations
 
 - The SAP integration was validated end to end **against the mock**, including failure and retry, but not against a real Business One system. Field names and behavior follow the Service Layer documentation; a real environment may need adjustments (UoM, warehouses, user-defined fields).
-- Authentication and authorization are not implemented; the API is meant to run behind a gateway or on a private network.
+- Authentication and authorization are not implemented in the API or in the dashboard; they are meant to run behind a gateway or on a private network.
 - Credentials in `docker-compose.yml` are development defaults.
 
 ## Roadmap
 
-- [ ] Web dashboard (React): stock by batch, alerts, ABC chart and SAP sync status
+- [x] Web dashboard (React): stock by batch, alerts, ABC chart, operations and SAP sync status
 - [ ] Translate remaining Portuguese identifiers, comments and messages to English
 - [ ] Authentication (OAuth2/JWT) and role-based access
-- [ ] CI pipeline (build and tests on every push)
+- [x] CI pipeline (build and tests on every push)
 - [ ] Metrics and tracing (Micrometer, OpenTelemetry)
 
 ## How this was built
