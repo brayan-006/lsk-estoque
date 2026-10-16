@@ -26,7 +26,10 @@ public class MinimumStockService {
     private final ProductRepository products;
     private final ApplicationEventPublisher events;
 
-    /** Opens one alert when the balance is at or below the minimum and closes it when the balance recovers. */
+    /**
+     * Keeps one alert per product: opens it when the balance is at or below the minimum, keeps its figures
+     * up to date while it stays open, and closes it when the balance recovers.
+     */
     @Transactional
     public void evaluate(Product product) {
         BigDecimal minimum = product.getMinimumStock();
@@ -36,12 +39,19 @@ public class MinimumStockService {
         BigDecimal balance = batches.availableBalance(product.getId());
 
         if (balance.compareTo(minimum) <= 0) {
-            if (alerts.existsByProductIdAndTypeAndResolvedFalse(product.getId(), AlertType.MINIMUM_STOCK)) {
-                return;
-            }
             String message = "Minimum stock reached: SKU %s has balance %s (minimum %s)".formatted(
                     product.getSku(), balance.stripTrailingZeros().toPlainString(),
                     minimum.stripTrailingZeros().toPlainString());
+
+            var open = alerts.findFirstByProductIdAndTypeAndResolvedFalse(product.getId(), AlertType.MINIMUM_STOCK);
+            if (open.isPresent()) {
+                StockAlert alert = open.get();
+                alert.setBalanceAtAlert(balance);
+                alert.setMinimumStock(minimum);
+                alert.setMessage(message);
+                return;
+            }
+
             StockAlert alert = alerts.save(StockAlert.builder()
                     .product(product)
                     .type(AlertType.MINIMUM_STOCK)

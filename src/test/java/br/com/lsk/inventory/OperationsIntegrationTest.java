@@ -129,6 +129,23 @@ class OperationsIntegrationTest {
         assertThat(products.findBySku("OPS-6").orElseThrow().isActive()).isTrue();
     }
 
+    @Test
+    void openAlertFollowsTheNewMinimum() {
+        productService.create(command("OPS-7", "0"));
+        Product product = products.findBySku("OPS-7").orElseThrow();
+        batches.saveAndFlush(Batch.builder()
+                .product(product).batchCode("L1").receivedAt(OffsetDateTime.now().minusDays(1))
+                .initialQuantity(new BigDecimal("10")).currentQuantity(new BigDecimal("10"))
+                .unitCost(new BigDecimal("5")).build());
+
+        productService.update("OPS-7", update("10"));
+        productService.update("OPS-7", update("20"));
+
+        var alert = alerts.findFirstByProductIdAndTypeAndResolvedFalse(product.getId(), AlertType.MINIMUM_STOCK).orElseThrow();
+        assertThat(alert.getMinimumStock()).isEqualByComparingTo("20");
+        assertThat(alert.getMessage()).contains("minimum 20");
+    }
+
     private static CreateCommand command(String sku, String minimum) {
         return new CreateCommand(sku, "Test product " + sku, "Cat-OPS", "UN", new BigDecimal(minimum),
                 new BigDecimal("10"), false, null);

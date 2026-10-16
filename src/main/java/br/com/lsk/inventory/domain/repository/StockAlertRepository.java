@@ -9,10 +9,13 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.Optional;
 
 public interface StockAlertRepository extends JpaRepository<StockAlert, Long> {
 
     boolean existsByProductIdAndTypeAndResolvedFalse(Long productId, AlertType type);
+
+    Optional<StockAlert> findFirstByProductIdAndTypeAndResolvedFalse(Long productId, AlertType type);
 
     @Transactional
     @Modifying
