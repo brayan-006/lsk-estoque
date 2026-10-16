@@ -28,15 +28,15 @@ export default function Receive() {
     setResult(null);
     try {
       const response = await api.receive({
-        chaveAcesso: accessKey.trim(),
-        numero: invoiceNumber.trim(),
-        itens: lines.map((line) => ({
+        accessKey: accessKey.trim(),
+        number: invoiceNumber.trim(),
+        items: lines.map((line) => ({
           sku: line.sku,
-          codigoLote: line.batch.trim(),
-          quantidade: Number(line.quantity),
-          custoUnitario: Number(line.cost),
-          dataFabricacao: line.manufactured || null,
-          dataValidade: line.expiry || null,
+          batchCode: line.batch.trim(),
+          quantity: Number(line.quantity),
+          unitCost: Number(line.cost),
+          manufacturingDate: line.manufactured || null,
+          expiryDate: line.expiry || null,
         })),
       });
       setResult(response);
@@ -112,16 +112,16 @@ export default function Receive() {
 
       {result && (
         <div className="card">
-          <Notice tone="ok">Receipt registered. Reference {result.referencia} ({result.itensProcessados} item(s)).</Notice>
+          <Notice tone="ok">Receipt registered. Reference {result.reference} ({result.itemsProcessed} item(s)).</Notice>
           <table>
             <thead><tr><th>SKU</th><th>Batch</th><th className="num">Received</th><th className="num">New balance</th></tr></thead>
             <tbody>
-              {result.lotes.map((batch) => (
-                <tr key={batch.codigoLote}>
+              {result.batches.map((batch) => (
+                <tr key={batch.batchCode}>
                   <td>{batch.sku}</td>
-                  <td>{batch.codigoLote}</td>
-                  <td className="num">{number(batch.quantidade)}</td>
-                  <td className="num">{number(batch.saldoDoSku)}</td>
+                  <td>{batch.batchCode}</td>
+                  <td className="num">{number(batch.quantity)}</td>
+                  <td className="num">{number(batch.skuBalance)}</td>
                 </tr>
               ))}
             </tbody>

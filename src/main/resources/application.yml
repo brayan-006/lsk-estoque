@@ -1,9 +1,9 @@
 spring:
   application:
-    name: lsk-estoque
+    name: lsk-inventory
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/lsk_estoque}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/lsk_inventory}
     username: ${DB_USER:lsk}
     password: ${DB_PASSWORD:lsk}
 
@@ -49,14 +49,14 @@ management:
 lsk:
   jobs:
     enabled: true
-    curva-abc-cron: "0 30 2 * * *"
-    lotes-vencidos-cron: "0 0 1 * * *"
-  estoque:
-    janela-abc-dias: 90
-    limite-classe-a: 0.80
-    limite-classe-b: 0.95
-    sap-max-tentativas: 5
-    sap-timeout-envio: 10m
+    abc-analysis-cron: "0 30 2 * * *"
+    batches-expired-cron: "0 0 1 * * *"
+  inventory:
+    abc-window-days: 90
+    class-a-limit: 0.80
+    class-b-limit: 0.95
+    sap-max-attempts: 5
+    sap-send-timeout: 10m
   sap:
     enabled: ${SAP_ENABLED:false}
     base-url: ${SAP_URL:https://localhost:50000}

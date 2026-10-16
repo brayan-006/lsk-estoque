@@ -39,14 +39,14 @@ export default function Movements() {
           <div className="toolbar">
             <select value={type} onChange={(e) => setType(e.target.value)}>
               <option value="">All types</option>
-              <option value="ENTRADA">ENTRADA</option>
-              <option value="SAIDA">SAIDA</option>
+              <option value="INBOUND">INBOUND</option>
+              <option value="OUTBOUND">OUTBOUND</option>
             </select>
             <select value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">All SAP statuses</option>
-              <option value="PENDENTE">PENDENTE</option>
-              <option value="ENVIADO">ENVIADO</option>
-              <option value="ERRO">ERRO</option>
+              <option value="PENDING">PENDING</option>
+              <option value="SENT">SENT</option>
+              <option value="ERROR">ERROR</option>
             </select>
           </div>
         </div>
@@ -59,7 +59,7 @@ export default function Movements() {
             {rows.map((m) => (
               <tr key={m.id}>
                 <td>{m.id}</td>
-                <td><Badge tone={m.type === "ENTRADA" ? "ok" : "neutral"}>{m.type}</Badge></td>
+                <td><Badge tone={m.type === "INBOUND" ? "ok" : "neutral"}>{m.type}</Badge></td>
                 <td>{m.sku}</td>
                 <td>{m.batchCode}</td>
                 <td className="num">{number(m.quantity)}</td>
@@ -69,7 +69,7 @@ export default function Movements() {
                 <td>{m.sapDocEntry ?? "-"}</td>
                 <td>{dateTime(m.createdAt)}</td>
                 <td>
-                  {(m.sapStatus === "ERRO" || m.sapStatus === "PENDENTE") && (
+                  {(m.sapStatus === "ERROR" || m.sapStatus === "PENDING") && (
                     <button className="ghost small" disabled={retrying === m.id} onClick={() => retry(m)}>
                       {retrying === m.id ? "Sending..." : "Retry SAP"}
                     </button>

@@ -18,7 +18,7 @@ export default function StockDetail({ sku, onClose }) {
       <div className="drawer-header">
         <div>
           <h3>{sku}</h3>
-          <span className="muted">{stock?.descricao}</span>
+          <span className="muted">{stock?.description}</span>
         </div>
         <button className="ghost" onClick={onClose}>Close</button>
       </div>
@@ -29,10 +29,10 @@ export default function StockDetail({ sku, onClose }) {
       {stock && (
         <>
           <div className="stats">
-            <div><span className="muted">Balance</span><strong>{number(stock.saldoDisponivel)} {stock.unidade}</strong></div>
-            <div><span className="muted">Minimum</span><strong>{number(stock.estoqueMinimo)}</strong></div>
-            <div><span className="muted">Average cost</span><strong>{money(stock.custoMedio)}</strong></div>
-            <div><span className="muted">ABC class</span><strong>{stock.classeAbc}</strong></div>
+            <div><span className="muted">Balance</span><strong>{number(stock.availableBalance)} {stock.unit}</strong></div>
+            <div><span className="muted">Minimum</span><strong>{number(stock.minimumStock)}</strong></div>
+            <div><span className="muted">Average cost</span><strong>{money(stock.averageCost)}</strong></div>
+            <div><span className="muted">ABC class</span><strong>{stock.abcClass}</strong></div>
           </div>
 
           <h4>Batches in picking order</h4>
@@ -41,14 +41,14 @@ export default function StockDetail({ sku, onClose }) {
               <tr><th>#</th><th>Batch</th><th>Expiry</th><th>Days left</th><th className="num">Qty</th><th>Rule</th></tr>
             </thead>
             <tbody>
-              {stock.lotesEmOrdemDeSaida.map((batch) => (
-                <tr key={batch.codigoLote}>
-                  <td>{batch.ordemDeSaida}</td>
-                  <td>{batch.codigoLote}</td>
-                  <td>{batch.dataValidade ?? "-"}</td>
-                  <td>{batch.diasParaVencer ?? "-"}</td>
-                  <td className="num">{number(batch.quantidade)}</td>
-                  <td><Badge tone={batch.criterio === "FEFO" ? "info" : "neutral"}>{batch.criterio}</Badge></td>
+              {stock.batchesInPickingOrder.map((batch) => (
+                <tr key={batch.batchCode}>
+                  <td>{batch.pickingOrder}</td>
+                  <td>{batch.batchCode}</td>
+                  <td>{batch.expiryDate ?? "-"}</td>
+                  <td>{batch.daysUntilExpiry ?? "-"}</td>
+                  <td className="num">{number(batch.quantity)}</td>
+                  <td><Badge tone={batch.criterion === "FEFO" ? "info" : "neutral"}>{batch.criterion}</Badge></td>
                 </tr>
               ))}
             </tbody>

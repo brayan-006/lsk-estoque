@@ -19,7 +19,7 @@ export default function App() {
   return (
     <div className="layout">
       <header className="topbar">
-        <div className="brand">LSK <span>Estoque</span></div>
+        <div className="brand">LSK <span>Inventory</span></div>
         <nav>
           {TABS.map((tab) => (
             <button key={tab.id} className={tab.id === active ? "tab active" : "tab"} onClick={() => setActive(tab.id)}>

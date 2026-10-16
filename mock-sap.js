@@ -35,7 +35,7 @@ http.createServer(async (req, res) => {
   if (req.method === 'POST' && path === '/b1s/v1/Login') {
     const body = await readBody(req);
     if (!body || !body.CompanyDB || !body.UserName || !body.Password) {
-      return sapError(res, 400, -1, 'Login inválido: CompanyDB, UserName e Password são obrigatórios');
+      return sapError(res, 400, -1, 'Invalid login: CompanyDB, UserName and Password are required');
     }
     res.setHeader('Set-Cookie', [`B1SESSION=${SESSION}; path=/; HttpOnly`, 'ROUTEID=.node1; path=/b1s']);
     console.log(`  login ok (CompanyDB=${body.CompanyDB}, user=${body.UserName})`);
@@ -53,12 +53,12 @@ http.createServer(async (req, res) => {
   }
 
   const m = path.match(/^\/b1s\/v1\/(InventoryGenExits|InventoryGenEntries)$/);
-  if (!m) return sapError(res, 404, -1, 'Recurso não encontrado: ' + path);
+  if (!m) return sapError(res, 404, -1, 'Resource not found: ' + path);
   const entity = m[1];
 
   if (req.method === 'GET') {
-    const filtro = url.searchParams.get('$filter') || '';
-    const ref = (filtro.match(/Reference2 eq '(.*)'/) || [])[1];
+    const filter = url.searchParams.get('$filter') || '';
+    const ref = (filter.match(/Reference2 eq '(.*)'/) || [])[1];
     const achados = docs[entity].filter((d) => ref && d.Reference2 === ref).map((d) => ({ DocEntry: d.DocEntry }));
     return send(res, 200, { value: achados });
   }
@@ -67,10 +67,10 @@ http.createServer(async (req, res) => {
     if (process.env.MOCK_FAIL === '1') return sapError(res, 500, -2028, 'Simulated failure (MOCK_FAIL=1)');
     const doc = await readBody(req);
     if (!doc || !Array.isArray(doc.DocumentLines) || doc.DocumentLines.length === 0) {
-      return sapError(res, 400, -10, 'DocumentLines é obrigatório');
+      return sapError(res, 400, -10, 'DocumentLines is required');
     }
     for (const l of doc.DocumentLines) {
-      if (!l.ItemCode || !(l.Quantity > 0)) return sapError(res, 400, -10, 'Linha inválida: ItemCode/Quantity');
+      if (!l.ItemCode || !(l.Quantity > 0)) return sapError(res, 400, -10, 'Invalid line: ItemCode/Quantity');
     }
     const saved = { DocEntry: nextDocEntry++, ...doc };
     docs[entity].push(saved);
@@ -79,5 +79,5 @@ http.createServer(async (req, res) => {
     return send(res, 201, saved);
   }
 
-  return sapError(res, 405, -1, 'Método não suportado');
+  return sapError(res, 405, -1, 'Method not supported');
 }).listen(PORT, () => console.log(`Mock SAP B1 Service Layer listening on http://localhost:${PORT}`));

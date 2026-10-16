@@ -15,7 +15,7 @@ export default function Overview() {
   const [busy, setBusy] = useState(false);
 
   const list = products.data ?? [];
-  const sapIssues = (movements.data ?? []).filter((m) => m.sapStatus === "PENDENTE" || m.sapStatus === "ERRO").length;
+  const sapIssues = (movements.data ?? []).filter((m) => m.sapStatus === "PENDING" || m.sapStatus === "ERROR").length;
   const abc = ["A", "B", "C"].map((c) => ({ name: `Class ${c}`, value: list.filter((p) => p.abcClass === c).length }));
   const hasData = abc.some((slice) => slice.value > 0);
 

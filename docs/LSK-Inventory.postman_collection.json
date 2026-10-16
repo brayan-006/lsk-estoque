@@ -1,0 +1,437 @@
+{
+  "info": {
+    "name": "LSK Inventory",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Inventory management API. Variables: baseUrl (API), rabbitUrl (RabbitMQ management), sku, movementId."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "rabbitUrl",
+      "value": "http://localhost:15672"
+    },
+    {
+      "key": "sku",
+      "value": "TONER-HP-85A"
+    },
+    {
+      "key": "movementId",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Stock",
+      "item": [
+        {
+          "name": "Get stock by SKU",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stock/{{sku}}"
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List products by ABC class",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/abc-analysis/products?abcClass=A"
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Goods receipt (NF-e)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stock/receipts/nfe"
+            },
+            "description": "Generates a new 44-digit access key on every send. Sending the same key twice returns a conflict (idempotency).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accessKey\": \"{{accessKey}}\",\n  \"number\": \"1234\",\n  \"items\": [\n    {\n      \"sku\": \"TONER-HP-85A\",\n      \"batchCode\": \"L-2026-C\",\n      \"quantity\": 10,\n      \"unitCost\": 45.5,\n      \"manufacturingDate\": null,\n      \"expiryDate\": \"2027-12-31\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let key = '35';",
+                  "while (key.length < 44) { key += Math.floor(Math.random() * 10); }",
+                  "pm.variables.set('accessKey', key);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Recalculate ABC analysis",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stock/abc-analysis/recalculate"
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "List products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products"
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Create product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"NEW-SKU-1\",\n  \"description\": \"Example product\",\n  \"category\": \"IT Supplies\",\n  \"unit\": \"UN\",\n  \"minimumStock\": 5,\n  \"salePrice\": 99.9,\n  \"controlsExpiry\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Update product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/NEW-SKU-1"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Example product (edited)\",\n  \"unit\": \"UN\",\n  \"minimumStock\": 8,\n  \"salePrice\": 109.9\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Remove product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/NEW-SKU-1"
+            },
+            "description": "Soft delete; refused while the product has stock."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sales and movements",
+      "item": [
+        {
+          "name": "Register sale",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sales"
+            },
+            "description": "Send the same idempotencyKey twice to see the duplicate being ignored.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotencyKey\": \"{{$guid}}\",\n  \"orderRef\": \"ORD-1001\",\n  \"items\": [\n    {\n      \"sku\": \"TONER-HP-85A\",\n      \"quantity\": 1,\n      \"unitPrice\": 189.9\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List alerts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/alerts"
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "List movements",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/movements?limit=50"
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Retry SAP",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/movements/{{movementId}}/sap-retry"
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "RabbitMQ",
+      "item": [
+        {
+          "name": "Publish sale event (1 unit)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{rabbitUrl}}/api/exchanges/%2F/lsk.inventory/publish"
+            },
+            "description": "New eventId on every send. Expected response: {\"routed\": true}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{publishBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "guest"
+                },
+                {
+                  "key": "password",
+                  "value": "guest"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const id = pm.variables.replaceIn('{{$guid}}');",
+                  "const event = { eventId: id, order: 'ORD-' + id, occurredAt: new Date().toISOString(),",
+                  "  items: [{ sku: 'TONER-HP-85A', quantity: 1, unitPrice: 89.9 }] };",
+                  "pm.variables.set('publishBody', JSON.stringify({",
+                  "  properties: { content_type: 'application/json' }, routing_key: 'sale.confirmed',",
+                  "  payload: JSON.stringify(event), payload_encoding: 'string' }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Publish sale with insufficient stock (goes to the DLQ)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{rabbitUrl}}/api/exchanges/%2F/lsk.inventory/publish"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{{publishBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "guest"
+                },
+                {
+                  "key": "password",
+                  "value": "guest"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const id = pm.variables.replaceIn('{{$guid}}');",
+                  "const event = { eventId: id, order: 'ORD-' + id, occurredAt: new Date().toISOString(),",
+                  "  items: [{ sku: 'TONER-HP-85A', quantity: 999999, unitPrice: 89.9 }] };",
+                  "pm.variables.set('publishBody', JSON.stringify({",
+                  "  properties: { content_type: 'application/json' }, routing_key: 'sale.confirmed',",
+                  "  payload: JSON.stringify(event), payload_encoding: 'string' }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Publish sale with unknown SKU (goes to the DLQ)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{rabbitUrl}}/api/exchanges/%2F/lsk.inventory/publish"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{{publishBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "guest"
+                },
+                {
+                  "key": "password",
+                  "value": "guest"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const id = pm.variables.replaceIn('{{$guid}}');",
+                  "const event = { eventId: id, order: 'ORD-' + id, occurredAt: new Date().toISOString(),",
+                  "  items: [{ sku: 'MISSING-SKU', quantity: 1, unitPrice: 10 }] };",
+                  "pm.variables.set('publishBody', JSON.stringify({",
+                  "  properties: { content_type: 'application/json' }, routing_key: 'sale.confirmed',",
+                  "  payload: JSON.stringify(event), payload_encoding: 'string' }));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health"
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "SAP integration status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/system/status"
+            },
+            "description": ""
+          }
+        }
+      ]
+    }
+  ]
+}

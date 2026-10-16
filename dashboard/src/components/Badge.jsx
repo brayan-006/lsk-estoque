@@ -3,8 +3,8 @@ export default function Badge({ tone = "neutral", children }) {
 }
 
 export const sapTone = {
-  ENVIADO: "ok",
-  PENDENTE: "warn",
-  ENVIANDO: "info",
-  ERRO: "bad",
+  SENT: "ok",
+  PENDING: "warn",
+  SENDING: "info",
+  ERROR: "bad",
 };

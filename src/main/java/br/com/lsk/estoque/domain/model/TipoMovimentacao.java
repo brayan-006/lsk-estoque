@@ -1,5 +1,0 @@
-package br.com.lsk.estoque.domain.model;
-
-public enum TipoMovimentacao {
-    ENTRADA, SAIDA, AJUSTE
-}
